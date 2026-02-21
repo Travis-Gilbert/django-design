@@ -1,0 +1,9 @@
+{
+  "name": "django-design",
+  "version": "1.1.0",
+  "description": "Production-grade Django development toolkit. Skill for architecture guidance, /django-design command for interactive project scaffolding, and django-architect agent for proactive code review with auto-fix.",
+  "author": {
+    "name": "Travis Gilbert"
+  },
+  "keywords": ["django", "python", "web", "architecture", "scaffold", "code-review"]
+}
