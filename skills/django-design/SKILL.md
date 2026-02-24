@@ -1,7 +1,7 @@
 ---
 name: django-design
-description: This skill should be used when the user asks to "build a Django project", "create Django models", "design a Django API", "set up Django settings", "configure Django for deployment", "build a Django admin interface", "integrate Django with external APIs", "scaffold a Django app", "design database schemas for Django", "create Django views and URLs", "create Django forms", or "set up Django middleware". Also trigger when the user mentions Django in combination with words like "project", "app", "model", "view", "API", "deploy", "admin", "auth", "database", or "template". This skill covers project structure, model design, view patterns, URL routing, authentication, API design, admin customization, deployment configuration, and testing. It does NOT cover pure frontend work (use frontend-design for that) unless Django templates are involved.
-version: 1.1.0
+description: This skill should be used when the user asks to build a Django project, design Django models or database schemas, create views and APIs, configure deployment or settings, set up authentication and permissions, customize the Django admin, optimize query performance, configure background tasks with Celery or django-rq, build CMS or content management features, integrate external APIs, create Django forms or templates, integrate HTMX or Unpoly, review Django migrations, or scaffold a new Django app. It covers the full Django backend lifecycle from project structure through production deployment. It does NOT cover pure frontend work (use frontend-design for that) unless Django templates are involved.
+version: 2.0.0
 ---
 
 # Django Design
@@ -14,9 +14,9 @@ Before writing any code, understand the shape of the application:
 
 - **Domain**: Identify the real-world process being modeled. Determine the nouns (models) and verbs (actions) in the domain.
 - **Scale**: Determine whether this is a small internal tool or a public-facing portal. Scale changes everything from caching to database design.
-- **Integration surface**: Identify external systems — databases, APIs, file storage, email services, legacy systems. Each integration point needs its own consideration.
-- **Users and roles**: Map who touches the system — admins, staff, public users, API consumers. Define permission boundaries early.
-- **Deployment target**: Identify the target — Vercel serverless, traditional VPS, Docker, PaaS. Configuration varies dramatically.
+- **Integration surface**: Identify external systems: databases, APIs, file storage, email services, legacy systems. Each integration point needs its own consideration.
+- **Users and roles**: Map who touches the system: admins, staff, public users, API consumers. Define permission boundaries early.
+- **Deployment target**: Identify the target: Vercel serverless, traditional VPS, Docker, PaaS. Configuration varies dramatically.
 
 Build with these principles:
 
@@ -83,79 +83,28 @@ Key decisions in this structure:
 
 **Split requirements files** because production does not need `django-debug-toolbar` and development does not need `gunicorn`.
 
-## Model Design
+## Reference Library
 
-Read `references/models.md` for comprehensive model patterns including:
-- Abstract base models and when to use them
-- Field selection guide (the right field for the job)
-- Index strategy and query optimization
-- Relationship patterns and avoiding N+1 queries
-- Model managers and custom querysets
-- Signal usage (and when to avoid signals)
-- Data integrity through constraints and validators
+Each topic has a dedicated reference file with deep patterns, code examples, and anti-patterns:
 
-## Views and URL Patterns
+### Core Architecture
+- **`references/models.md`** — Abstract base models, field selection, index strategy, relationships, N+1 prevention, custom managers, signals, database constraints
+- **`references/views.md`** — FBV vs CBV, DRF viewsets, serializer patterns, URL conventions, middleware, pagination, file uploads, error handling
+- **`references/auth-and-security.md`** — Built-in auth, external providers (Clerk, Auth0), permissions, role-based access, security settings, CORS, rate limiting, input validation
 
-Read `references/views.md` for view architecture including:
-- When to use function-based vs class-based views
-- DRF viewset and serializer patterns
-- URL naming conventions and namespacing
-- Middleware patterns
-- Request/response lifecycle
-- File upload handling
-- Pagination strategies
+### Frontend and Templates
+- **`references/forms-and-templates.md`** — ModelForm patterns, formsets, custom widgets, template inheritance, django-cotton components, django-material integration, HTMX patterns, Unpoly integration
+- **`references/admin.md`** — Model registration, list_display, filters, fieldsets, custom actions, inline models, django-unfold, admin performance
 
-## Authentication, Permissions, and Security
+### Infrastructure
+- **`references/deployment.md`** — Vercel serverless, Gunicorn + Nginx, Docker, environment variables, connection pooling, static files, health checks, migration strategies, logging
+- **`references/performance.md`** — Query optimization, N+1 detection, annotations, only()/defer(), bulk operations, raw SQL, caching (low-level, template fragment, per-view), profiling, EXPLAIN ANALYZE, assertNumQueries, index maintenance
+- **`references/background-tasks.md`** — Celery, django-rq, Huey, task design (idempotency, serialization, retries, timeouts), queue architecture, periodic tasks, management commands, testing async work, monitoring
 
-Read `references/auth-and-security.md` for:
-- Django's built-in auth vs third-party options
-- Permission architecture (model-level, object-level, role-based)
-- API authentication (token, session, JWT considerations)
-- Security settings checklist
-- CORS configuration
-- Rate limiting strategies
-- Integrating external auth providers (Clerk, Auth0, etc.)
-
-## Admin Customization
-
-Read `references/admin.md` for admin patterns including:
-- Model registration and `list_display` configuration
-- Filters, search fields, and readonly fields
-- Fieldsets for organizing complex forms
-- Custom admin actions for batch operations
-- Overriding `get_queryset` for annotations and visibility control
-- django-unfold integration for modern admin UIs
-
-## Deployment Configuration
-
-Read `references/deployment.md` for deployment patterns including:
-- Vercel serverless deployment with Django
-- Traditional deployment (Gunicorn + Nginx)
-- Docker configuration
-- Static file handling (WhiteNoise, S3, CDN)
-- Database connection pooling
-- Environment variable management
-- Health checks and monitoring
-- Migration strategies for production
-
-## External API Integration
-
-Read `references/integrations.md` for integration patterns including:
-- One client class per external system
-- Internal authentication handling
-- Retry with backoff for transient failures
-- Logging every external call with timing
-- Caching for stable data
-- Graceful degradation on external failures
-
-## Testing Strategy
-
-Read `references/testing.md` for testing patterns including:
-- Prioritizing business logic tests over Django machinery
-- Using `factory_boy` for test data instead of fixtures
-- `pytest-django` for pytest-style assertions
-- Testing model methods, status transitions, and side effects
-- Smoke tests for templates and URL routing
+### Specialized
+- **`references/cms-and-content.md`** — Flat content models, publishable workflows, page trees (treebeard, mptt), placeholder/plugin architecture, content versioning, draft/live patterns, django-cms integration
+- **`references/integrations.md`** — Client class pattern, authentication handling, retry with backoff, logging external calls, caching stable data, graceful degradation, testing mocked integrations
+- **`references/testing.md`** — factory_boy, pytest-django, testing business logic, view tests, constraint tests, query count tests, test organization
 
 ## Anti-Patterns to Avoid
 
@@ -169,3 +118,5 @@ These are the Django equivalent of "AI slop." They look plausible but create rea
 - **`@csrf_exempt` on every view** because the frontend cannot handle CSRF. Fix the frontend instead.
 - **Hardcoded URLs in templates.** Use `{% url %}` tags and `reverse()`. Always.
 - **Model methods that hit the database multiple times.** If a method runs 5 queries every call, it belongs in an annotation or a prefetch.
+- **Unbounded querysets.** Every list endpoint needs pagination. Every queryset in a loop needs limits.
+- **Dangerous migrations.** Dropping columns, renaming fields, and adding non-nullable columns to populated tables all require careful migration strategies. See the django-migrator agent.

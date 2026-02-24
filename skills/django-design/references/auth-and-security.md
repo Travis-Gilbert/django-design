@@ -260,8 +260,8 @@ CORS_ALLOW_ALL_ORIGINS = True  # only in development
 
 # settings/production.py
 CORS_ALLOWED_ORIGINS = [
-    'https://compliance.thelandbank.org',
-    'https://portal.thelandbank.org',
+    'https://app.example.com',
+    'https://portal.example.com',
 ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
