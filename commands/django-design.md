@@ -15,7 +15,7 @@ Use the AskUserQuestion tool to gather project requirements. Ask these questions
 **Batch 1 — Identity and Domain:**
 
 1. **Project name** — What should the project be called? (used for directory name and Django project name; will be converted to snake_case for Python)
-2. **Domain** — What does this application do? What real-world process does it model? (e.g., "property purchase application portal", "inventory management system", "customer support ticketing")
+2. **Domain** — What does this application do? What real-world process does it model? (e.g., "content publishing studio", "inventory management system", "customer support ticketing")
 3. **Scale** — Is this a small internal tool, a medium business application, or a large public-facing portal?
 
 **Batch 2 — Technical Decisions:**

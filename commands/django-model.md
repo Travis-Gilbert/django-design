@@ -31,14 +31,14 @@ Use AskUserQuestion to ask in 1-2 batches:
 **Batch 1: Domain Description**
 
 1. **Target app** — Which app should these models live in? List existing apps and let the user choose or create a new one.
-2. **Domain description** — Describe the real-world process these models represent. Be specific about the nouns (entities), their attributes, and how they relate to each other. (e.g., "Property inspections where an inspector visits a property, takes photos, checks items on a checklist, and submits a pass/fail report that gets reviewed by a manager")
-3. **Key workflows** — What are the main things users do with this data? (e.g., "Create inspections, assign inspectors, upload photos, approve/reject reports")
+2. **Domain description** — Describe the real-world process these models represent. Be specific about the nouns (entities), their attributes, and how they relate to each other. (e.g., "Essays that move through a publishing pipeline with stages: drafting, research, production, published. Each essay has a title, body, thesis, summary, word count, and is linked to research sources via slug references")
+3. **Key workflows** — What are the main things users do with this data? (e.g., "Create essays, advance through pipeline stages, link research sources, publish to the site")
 
 **Batch 2: Technical Details** (based on domain analysis)
 
 4. **Proposed models** — Based on the domain, suggest models with their key fields and relationships. Ask the user to confirm or adjust. Be specific about field types.
 5. **Special requirements** — Ask about:
-   - Soft delete needed? (audit trails, compliance data)
+   - Soft delete needed? (audit trails, archival workflows)
    - Status workflows? (draft > review > approved > archived)
    - File uploads? (images, documents)
    - External system integration? (IDs from other systems)
@@ -254,19 +254,19 @@ After generating, present a summary:
 ```
 | Model | Fields | Relationships | Indexes | Constraints |
 |-------|--------|---------------|---------|-------------|
-| Inspection | 8 | property (FK), inspector (FK) | status, date | unique active per property |
-| ChecklistItem | 5 | inspection (FK) | position | positive score |
-| InspectionPhoto | 4 | inspection (FK), item (FK) | - | - |
+| Essay | 10 | created_by (FK to User) | stage, slug, date | unique slug |
+| FieldNote | 6 | essay (FK), created_by (FK) | date | - |
+| ShelfEntry | 5 | created_by (FK) | position | positive position |
 ```
 
 ### Relationship Diagram
 
 ```
-Property ←──── Inspection ────→ Inspector (User)
-                   │
-                   ├── ChecklistItem
-                   │
-                   └── InspectionPhoto
+User ←──── Essay ────→ FieldNote
+              │
+              ├── SourceLink (slug-based cross-service reference)
+              │
+              └── ShelfEntry
 ```
 
 ### Generated Files

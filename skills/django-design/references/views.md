@@ -1,8 +1,10 @@
 # Django Views and URL Patterns Reference
 
+This reference covers template-based views (function-based and class-based) and URL configuration. For REST API views with DRF, see api.md.
+
 ## Function-Based vs Class-Based Views
 
-This is not a religious debate. Both are tools with different strengths.
+Both are tools with different strengths. This is not a religious debate.
 
 **Use function-based views when:**
 - The logic is linear and specific to one endpoint
@@ -14,152 +16,128 @@ This is not a religious debate. Both are tools with different strengths.
 - You're building standard CRUD operations
 - You need to share behavior across multiple views (mixins)
 - Django's generic views (ListView, DetailView, CreateView) match your use case
-- You're building a REST API with DRF ViewSets
 
 **Use DRF ViewSets when:**
-- You're building a REST API that follows standard patterns
-- You want automatic routing, serialization, and content negotiation
-- The API maps cleanly to models
+- You're building a REST API - see api.md for patterns
 
 ```python
 # Function-based: clear, linear, easy to follow
-from django.http import JsonResponse
+from django.shortcuts import render, get_object_or_404, redirect
+from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_http_methods
 
 
+@login_required
 @require_http_methods(["GET"])
-def property_compliance_summary(request, property_id):
-    """Return compliance summary for a single property."""
-    property = get_object_or_404(
-        Property.objects.with_compliance_stats(),
-        pk=property_id,
+def essay_source_summary(request, slug):
+    """Return source summary for a single essay."""
+    essay = get_object_or_404(
+        Essay.objects.with_source_stats(),
+        slug=slug,
     )
-    
-    if not request.user.has_perm('properties.view_property'):
-        return JsonResponse({'error': 'Permission denied'}, status=403)
-    
-    return JsonResponse({
-        'property_id': str(property.id),
-        'address': property.address,
-        'status': property.status,
-        'days_owned': property.days_owned.days,
-        'documents_submitted': property.document_count,
-        'is_overdue': property.is_overdue,
+
+    if not request.user.has_perm('content.view_essay'):
+        raise PermissionDenied
+
+    return render(request, 'content/source_summary.html', {
+        'essay': essay,
+        'source_count': essay.source_count,
+        'stage': essay.get_stage_display(),
+        'is_published': essay.stage == 'published',
     })
 
 
 # Class-based: leverages Django's generic patterns
-from django.views.generic import ListView
+from django.views.generic import ListView, DetailView, CreateView, UpdateView
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 
 
-class PropertyListView(LoginRequiredMixin, ListView):
-    model = Property
-    template_name = 'properties/list.html'
-    context_object_name = 'properties'
+class EssayListView(LoginRequiredMixin, ListView):
+    model = Essay
+    template_name = 'content/essay_list.html'
+    context_object_name = 'essays'
     paginate_by = 25
-    
+
     def get_queryset(self):
-        qs = Property.objects.active().select_related('buyer', 'assigned_to')
-        
-        program = self.request.GET.get('program')
-        if program:
-            qs = qs.for_program(program)
-        
+        qs = Essay.objects.published().select_related('video_project')
+
+        tag = self.request.GET.get('tag')
+        if tag:
+            qs = qs.by_tag(tag)
+
         return qs
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['programs'] = Property.objects.values_list(
-            'program', flat=True
+        context['tags'] = Essay.objects.published().values_list(
+            'tags', flat=True
         ).distinct()
         return context
-
-
-# DRF ViewSet: full REST API with minimal code
-from rest_framework import viewsets, permissions
-from rest_framework.decorators import action
-from rest_framework.response import Response
-
-
-class PropertyViewSet(viewsets.ModelViewSet):
-    serializer_class = PropertySerializer
-    permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ['program', 'status']
-    search_fields = ['address', 'parcel_id']
-    ordering_fields = ['created_at', 'purchase_date']
-    ordering = ['-created_at']
-    
-    def get_queryset(self):
-        return Property.objects.active().select_related(
-            'buyer', 'assigned_to'
-        ).prefetch_related('documents')
-    
-    @action(detail=True, methods=['post'])
-    def approve(self, request, pk=None):
-        """Custom action for compliance approval."""
-        property = self.get_object()
-        property.approve(reviewer=request.user)
-        return Response(PropertySerializer(property).data)
 ```
 
-## DRF Serializer Patterns
-
-Serializers are where API shape meets database shape. Keep them honest.
+### Common CBV Patterns
 
 ```python
-from rest_framework import serializers
+class EssayCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+    model = Essay
+    form_class = EssayForm
+    template_name = 'content/essay_edit.html'
+    permission_required = 'content.add_essay'
+
+    def form_valid(self, form):
+        form.instance.created_by = self.request.user
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse('content:essay-detail', kwargs={'slug': self.object.slug})
 
 
-class PropertyListSerializer(serializers.ModelSerializer):
-    """Lightweight serializer for list views. Only include what the
-    list page needs to render each row."""
-    buyer_name = serializers.CharField(source='buyer.full_name', read_only=True)
-    is_overdue = serializers.BooleanField(read_only=True)
-    
-    class Meta:
-        model = Property
-        fields = [
-            'id', 'address', 'parcel_id', 'program',
-            'status', 'buyer_name', 'is_overdue',
-        ]
+class EssayUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+    model = Essay
+    form_class = EssayForm
+    template_name = 'content/essay_edit.html'
+    permission_required = 'content.change_essay'
+    slug_url_kwarg = 'slug'
 
-
-class PropertyDetailSerializer(serializers.ModelSerializer):
-    """Full serializer for detail/edit views."""
-    buyer = BuyerSerializer(read_only=True)
-    buyer_id = serializers.PrimaryKeyRelatedField(
-        queryset=Buyer.objects.all(),
-        source='buyer',
-        write_only=True,
-    )
-    documents = DocumentSerializer(many=True, read_only=True)
-    compliance_summary = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Property
-        fields = [
-            'id', 'address', 'parcel_id', 'program', 'status',
-            'purchase_date', 'purchase_price',
-            'buyer', 'buyer_id',
-            'documents', 'compliance_summary',
-            'created_at', 'updated_at',
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
-    
-    def get_compliance_summary(self, obj):
-        return {
-            'total_required': obj.required_document_count,
-            'total_submitted': obj.documents.count(),
-            'days_remaining': obj.days_until_deadline,
-        }
+    def get_queryset(self):
+        """Only allow editing essays in draft stages."""
+        return super().get_queryset().filter(stage__in=['research', 'drafting', 'production'])
 ```
 
-**Serializer principles:**
-- Use separate serializers for list and detail endpoints. List serializers should be lean.
-- Use `source` to reshape data without changing model structure.
-- Keep computed fields in `SerializerMethodField` or model properties, not in the view.
-- Use `write_only=True` / `read_only=True` to keep the API contract clear.
-- Validate at the serializer level for API-specific rules, at the model level for universal rules.
+**When NOT to use generic CBVs:**
+- If you're overriding 3+ methods, a function-based view is likely clearer.
+- If the view orchestrates multiple forms or models, a plain function gives you more control.
+- If you're returning JSON from a template view, consider whether it should be an API endpoint (see api.md).
+
+## Form Handling in Views
+
+See forms.md for form definitions. Here is the view-side pattern:
+
+```python
+@login_required
+def essay_edit(request, slug):
+    essay = get_object_or_404(Essay, slug=slug)
+
+    if request.method == 'POST':
+        form = EssayForm(request.POST, instance=essay)
+        source_formset = SourceFormSet(request.POST, instance=essay)
+        if form.is_valid() and source_formset.is_valid():
+            form.save()
+            source_formset.save()
+            messages.success(request, 'Essay updated successfully.')
+            return redirect('content:essay-detail', slug=essay.slug)
+    else:
+        form = EssayForm(instance=essay)
+        source_formset = SourceFormSet(instance=essay)
+
+    return render(request, 'content/essay_edit.html', {
+        'form': form,
+        'source_formset': source_formset,
+        'essay': essay,
+    })
+```
+
+**Key pattern:** Always return the form with errors on POST failure. Never redirect after a failed `is_valid()` - the user loses their input and error messages.
 
 ## URL Patterns
 
@@ -170,35 +148,63 @@ from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/v1/', include('apps.properties.urls', namespace='properties-api')),
-    path('', include('apps.portal.urls', namespace='portal')),
+    path('api/v1/', include('apps.content.api_urls', namespace='content-api')),
+    path('', include('apps.content.urls', namespace='content')),
 ]
 
 
-# apps/properties/urls.py
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+# apps/content/urls.py
+from django.urls import path
 from . import views
 
-app_name = 'properties'
-
-router = DefaultRouter()
-router.register(r'properties', views.PropertyViewSet, basename='property')
+app_name = 'content'
 
 urlpatterns = [
-    path('', include(router.urls)),
-    # Non-CRUD endpoints that don't fit the ViewSet pattern
-    path('dashboard/stats/', views.dashboard_stats, name='dashboard-stats'),
-    path('export/', views.export_properties, name='export'),
+    path('', views.DashboardView.as_view(), name='dashboard'),
+    path('essays/', views.EssayListView.as_view(), name='essay-list'),
+    path('essays/<slug:slug>/', views.EssayDetailView.as_view(), name='essay-detail'),
+    path('essays/new/', views.EssayCreateView.as_view(), name='essay-create'),
+    path('essays/<slug:slug>/edit/', views.EssayUpdateView.as_view(), name='essay-edit'),
+    path('essays/<slug:slug>/sources/', views.essay_source_summary, name='essay-sources'),
+    path('field-notes/', views.FieldNoteListView.as_view(), name='fieldnote-list'),
+    path('export/', views.export_essays, name='export'),
 ]
 ```
 
 **URL conventions:**
 - Always set `app_name` for URL namespacing. This prevents collisions.
 - Use `include()` to keep each app's URLs in its own file.
-- API versioning in the URL prefix (`/api/v1/`) is simple and works. Don't overthink it.
-- Use DRF's router for ViewSets. Define additional endpoints as plain `path()` entries.
-- Name every URL. Templates use `{% url 'properties:property-list' %}`, code uses `reverse('properties:property-list')`.
+- Name every URL. Templates use `{% url 'content:essay-list' %}`, code uses `reverse('content:essay-list')`.
+- Keep API URLs in a separate file (`api_urls.py`) from template-view URLs (`urls.py`). See api.md for router configuration.
+- Use `<slug:slug>` type converters for content models. They validate at the URL level so your view never receives an invalid slug.
+
+## Pagination
+
+Always paginate list views. Unbounded querysets are the most common performance problem.
+
+```python
+# For template-based views, use Django's built-in Paginator
+from django.core.paginator import Paginator
+
+
+def essay_list(request):
+    essays = Essay.objects.published().select_related('video_project')
+
+    # Apply search/filter form
+    form = EssaySearchForm(request.GET)
+    if form.is_valid():
+        essays = form.filter_queryset(essays)
+
+    paginator = Paginator(essays, 25)
+    page = paginator.get_page(request.GET.get('page'))
+
+    return render(request, 'content/essay_list.html', {
+        'page': page,
+        'form': form,
+    })
+```
+
+For DRF pagination options (PageNumber, LimitOffset, Cursor), see api.md.
 
 ## Middleware
 
@@ -214,21 +220,21 @@ logger = logging.getLogger('django.request')
 
 class RequestTimingMiddleware:
     """Log request duration for performance monitoring."""
-    
+
     def __init__(self, get_response):
         self.get_response = get_response
-    
+
     def __call__(self, request):
         start = time.monotonic()
         response = self.get_response(request)
         duration = time.monotonic() - start
-        
+
         if duration > 1.0:  # log slow requests
             logger.warning(
                 'Slow request: %s %s took %.2fs',
                 request.method, request.path, duration,
             )
-        
+
         response['X-Request-Duration'] = f'{duration:.3f}'
         return response
 
@@ -236,14 +242,14 @@ class RequestTimingMiddleware:
 class CurrentUserMiddleware:
     """Make the current user available to model methods
     without passing request around everywhere.
-    
+
     Use sparingly. This uses thread-local storage which
     doesn't work with async views.
     """
-    
+
     def __init__(self, get_response):
         self.get_response = get_response
-    
+
     def __call__(self, request):
         from apps.core.context import set_current_user
         set_current_user(request.user)
@@ -253,61 +259,24 @@ class CurrentUserMiddleware:
             set_current_user(None)
 ```
 
-## Pagination
-
-Always paginate list endpoints. Unbounded querysets are the most common performance problem in Django APIs.
-
-```python
-# For DRF, set defaults in settings
-REST_FRAMEWORK = {
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 25,
-}
-
-# For cursor-based pagination (better for large datasets)
-from rest_framework.pagination import CursorPagination
-
-
-class PropertyCursorPagination(CursorPagination):
-    page_size = 25
-    ordering = '-created_at'
-    cursor_query_param = 'cursor'
-
-
-# For template-based views, use Django's built-in Paginator
-from django.core.paginator import Paginator
-
-
-def property_list(request):
-    properties = Property.objects.active().select_related('buyer')
-    paginator = Paginator(properties, 25)
-    page = paginator.get_page(request.GET.get('page'))
-    return render(request, 'properties/list.html', {'page': page})
-```
-
-**Pagination choices:**
-- `PageNumberPagination`: Simple, works for most cases. Users can jump to any page.
-- `LimitOffsetPagination`: Good for APIs where clients want control over page size.
-- `CursorPagination`: Best for large datasets, real-time data, or infinite scroll. No page-jumping, but consistent performance.
-
 ## File Upload Handling
 
 ```python
 from django.core.validators import FileExtensionValidator
 
 
-class ComplianceDocument(TimeStampedModel):
-    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name='documents')
-    document_type = models.CharField(max_length=50, choices=DocumentType.choices)
+class VideoDeliverable(TimeStampedModel):
+    video = models.ForeignKey(VideoProject, on_delete=models.CASCADE, related_name='deliverables')
+    deliverable_type = models.CharField(max_length=50)
     file = models.FileField(
-        upload_to='compliance/%Y/%m/',
+        upload_to='deliverables/%Y/%m/',
         validators=[
-            FileExtensionValidator(allowed_extensions=['pdf', 'jpg', 'jpeg', 'png']),
+            FileExtensionValidator(allowed_extensions=['mp4', 'mov', 'pdf', 'jpg', 'png']),
         ],
     )
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     file_size = models.PositiveIntegerField(editable=False)
-    
+
     def save(self, *args, **kwargs):
         if self.file:
             self.file_size = self.file.size
@@ -338,31 +307,21 @@ AWS_DEFAULT_ACL = 'private'  # never default to public
 ## Error Handling
 
 ```python
-# For API views, use DRF's exception handling
-from rest_framework.exceptions import ValidationError, NotFound
-
-
-class PropertyViewSet(viewsets.ModelViewSet):
-    def perform_create(self, serializer):
-        buyer = serializer.validated_data.get('buyer')
-        if buyer.has_outstanding_violations:
-            raise ValidationError({
-                'buyer': 'This buyer has outstanding violations and cannot purchase properties.'
-            })
-        serializer.save()
-
-
 # For template views, use Django's error handling
-from django.http import Http404, HttpResponseBadRequest
+from django.http import Http404
+from django.core.exceptions import PermissionDenied
 
 
-def property_detail(request, property_id):
+def essay_detail(request, slug):
     try:
-        property = Property.objects.select_related('buyer').get(pk=property_id)
-    except Property.DoesNotExist:
-        raise Http404('Property not found')
-    
-    return render(request, 'properties/detail.html', {'property': property})
+        essay = Essay.objects.select_related('video_project').get(slug=slug)
+    except Essay.DoesNotExist:
+        raise Http404('Essay not found')
+
+    if not request.user.has_perm('content.view_essay'):
+        raise PermissionDenied
+
+    return render(request, 'content/essay_detail.html', {'essay': essay})
 
 
 # Custom error views
@@ -371,8 +330,18 @@ handler404 = 'apps.core.views.custom_404'
 handler500 = 'apps.core.views.custom_500'
 ```
 
+For API error handling (DRF exceptions, custom handlers), see api.md.
+
 **Error handling principles:**
-- Let DRF's exception handler format API errors consistently. Don't return custom JSON error shapes.
 - Use `get_object_or_404()` as a shortcut when you just need to fetch or 404.
-- Log server errors (500s) with full context. Don't log client errors (400s) at ERROR level since those are expected.
+- Raise `PermissionDenied` instead of returning a manual 403 response.
+- Log server errors (500s) with full context. Don't log client errors (400s) at ERROR level - those are expected.
 - Never expose internal error details (tracebacks, SQL queries) in production responses.
+
+## Anti-Patterns
+
+- **Putting business logic in views.** Views should orchestrate (get data, validate, save, redirect), not compute. If your view has complex conditionals, move that logic to the model or a service layer.
+- **Forgetting `select_related` / `prefetch_related`.** Every `get_queryset()` should think about what related objects the template needs. The Django Debug Toolbar will show you N+1 queries.
+- **No pagination on list views.** Every list endpoint needs pagination. A view that renders 50,000 objects will time out or crash the browser.
+- **Redirecting after form validation failure.** If `form.is_valid()` returns False, render the same template with the form. Redirecting loses the user's input and error messages.
+- **Manual permission checks instead of mixins.** Use `LoginRequiredMixin` and `PermissionRequiredMixin` on CBVs, or `@login_required` and `@permission_required` decorators on FBVs. Don't write `if not request.user.is_authenticated` in every view.

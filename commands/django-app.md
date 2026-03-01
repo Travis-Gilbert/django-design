@@ -33,8 +33,8 @@ find . -name "apps.py" -not -path "*/venv/*" -not -path "*/.venv/*" | head -20
 
 Use AskUserQuestion to gather requirements in a single batch:
 
-1. **App name** — What should this app be called? (Will be converted to snake_case. Examples: `properties`, `compliance`, `notifications`, `user_profiles`)
-2. **Domain** — What does this app handle? Describe the real-world process. (e.g., "Tracks property compliance documents and deadlines", "Manages buyer applications and review workflow")
+1. **App name** — What should this app be called? (Will be converted to snake_case. Examples: `content`, `research`, `notifications`, `user_profiles`)
+2. **Domain** — What does this app handle? Describe the real-world process. (e.g., "Manages essays and field notes through a publishing pipeline", "Tracks research sources and connections across threads")
 3. **Models** — Based on the domain, suggest 2-4 models and ask the user to confirm or adjust. Include field suggestions.
 4. **API or Templates** — Will this app serve a REST API (DRF serializers + viewsets), server-rendered templates (views + forms), or both?
 5. **Admin** — Should models be registered in admin? (Default: yes)
@@ -252,18 +252,18 @@ After generating, present:
 4. **Next steps** — review the migration, run migrate, create views/serializers
 
 ```
-App 'properties' created successfully!
+App 'content' created successfully!
 
 Files created:
-  apps/properties/models.py      — Property, ComplianceDocument models
-  apps/properties/admin.py       — Admin registrations with list_display
-  apps/properties/urls.py        — URL conf with app_name namespace
-  apps/properties/serializers.py — DRF serializers
-  apps/properties/viewsets.py    — DRF viewsets
-  apps/properties/tests/         — Test scaffolding with factories
+  apps/content/models.py      — Essay, FieldNote models
+  apps/content/admin.py       — Admin registrations with list_display
+  apps/content/urls.py        — URL conf with app_name namespace
+  apps/content/serializers.py — DRF serializers
+  apps/content/viewsets.py    — DRF viewsets
+  apps/content/tests/         — Test scaffolding with factories
 
 Files modified:
-  project_name/settings/base.py  — Added 'apps.properties' to INSTALLED_APPS
+  project_name/settings/base.py  — Added 'apps.content' to INSTALLED_APPS
   project_name/urls.py           — Added API URL include
 
 Next steps:

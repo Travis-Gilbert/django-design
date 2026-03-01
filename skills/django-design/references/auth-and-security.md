@@ -22,7 +22,7 @@ class User(AbstractUser):
     """Custom user model. Always define this at project start,
     even if you don't need extra fields yet. Changing the user
     model after migrations exist is painful."""
-    
+
     organization = models.ForeignKey(
         'Organization', on_delete=models.SET_NULL,
         null=True, blank=True,
@@ -32,7 +32,7 @@ class User(AbstractUser):
         choices=UserRole.choices,
         default=UserRole.VIEWER,
     )
-    
+
     class Meta:
         indexes = [
             models.Index(fields=['organization', 'role']),
@@ -74,14 +74,14 @@ from rest_framework.exceptions import AuthenticationFailed
 
 class ClerkAuthentication(BaseAuthentication):
     """Validate Clerk JWT tokens and map to Django users."""
-    
+
     def authenticate(self, request):
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
         if not auth_header.startswith('Bearer '):
             return None
-        
+
         token = auth_header[7:]
-        
+
         try:
             payload = jwt.decode(
                 token,
@@ -93,17 +93,17 @@ class ClerkAuthentication(BaseAuthentication):
             raise AuthenticationFailed('Token has expired')
         except jwt.InvalidTokenError:
             raise AuthenticationFailed('Invalid token')
-        
+
         user = self._get_or_create_user(payload)
         return (user, payload)
-    
+
     def _get_or_create_user(self, payload):
         """Map Clerk user to Django user, creating if needed."""
         from apps.core.models import User
-        
+
         clerk_id = payload.get('sub')
         email = payload.get('email', '')
-        
+
         user, created = User.objects.get_or_create(
             clerk_id=clerk_id,
             defaults={
@@ -111,11 +111,11 @@ class ClerkAuthentication(BaseAuthentication):
                 'username': email or clerk_id,
             },
         )
-        
+
         if not created and user.email != email:
             user.email = email
             user.save(update_fields=['email'])
-        
+
         return user
 ```
 
@@ -130,13 +130,13 @@ from rest_framework.permissions import DjangoModelPermissions
 
 
 # Function-based view
-@permission_required('properties.change_property', raise_exception=True)
-def update_property(request, property_id):
+@permission_required('content.change_essay', raise_exception=True)
+def update_essay(request, slug):
     ...
 
 
 # DRF: DjangoModelPermissions maps HTTP methods to model permissions automatically
-class PropertyViewSet(viewsets.ModelViewSet):
+class EssayViewSet(viewsets.ModelViewSet):
     permission_classes = [DjangoModelPermissions]
 ```
 
@@ -147,31 +147,31 @@ For business rules that go beyond CRUD.
 from rest_framework.permissions import BasePermission
 
 
-class CanApproveCompliance(BasePermission):
-    """Only compliance officers and managers can approve."""
-    
+class CanPublishContent(BasePermission):
+    """Only editors and managers can publish content."""
+
     def has_permission(self, request, view):
-        return request.user.role in ['compliance_officer', 'manager', 'admin']
+        return request.user.role in ['editor', 'manager', 'admin']
 
 
-class IsPropertyAssignee(BasePermission):
-    """Users can only modify properties assigned to them,
-    unless they're a manager or admin."""
-    
+class IsContentAuthor(BasePermission):
+    """Users can only modify content they created,
+    unless they're an editor or admin."""
+
     def has_object_permission(self, request, view, obj):
-        if request.user.role in ['manager', 'admin']:
+        if request.user.role in ['editor', 'admin']:
             return True
-        return obj.assigned_to == request.user
+        return obj.created_by == request.user
 
 
-class PropertyViewSet(viewsets.ModelViewSet):
+class EssayViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
-    
+
     def get_permissions(self):
-        if self.action == 'approve':
-            return [CanApproveCompliance()]
+        if self.action == 'publish':
+            return [CanPublishContent()]
         if self.action in ['update', 'partial_update']:
-            return [IsAuthenticated(), IsPropertyAssignee()]
+            return [IsAuthenticated(), IsContentAuthor()]
         return super().get_permissions()
 ```
 
@@ -181,7 +181,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
 class UserRole(models.TextChoices):
     VIEWER = 'viewer', 'Viewer'
     STAFF = 'staff', 'Staff'
-    COMPLIANCE_OFFICER = 'compliance_officer', 'Compliance Officer'
+    EDITOR = 'editor', 'Editor'
     MANAGER = 'manager', 'Manager'
     ADMIN = 'admin', 'Administrator'
 
@@ -189,17 +189,17 @@ class UserRole(models.TextChoices):
 # Middleware or mixin that attaches role-based permissions
 class RolePermissionMixin:
     """Mixin for views that need role-based access control."""
-    
+
     required_role = None  # override in subclass
-    
+
     ROLE_HIERARCHY = {
         'viewer': 0,
         'staff': 1,
-        'compliance_officer': 2,
+        'editor': 2,
         'manager': 3,
         'admin': 4,
     }
-    
+
     def dispatch(self, request, *args, **kwargs):
         if self.required_role:
             user_level = self.ROLE_HIERARCHY.get(request.user.role, 0)
@@ -261,7 +261,7 @@ CORS_ALLOW_ALL_ORIGINS = True  # only in development
 # settings/production.py
 CORS_ALLOWED_ORIGINS = [
     'https://app.example.com',
-    'https://portal.example.com',
+    'https://studio.example.com',
 ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
@@ -279,8 +279,8 @@ from django_ratelimit.decorators import ratelimit
 
 
 @ratelimit(key='ip', rate='10/m', method='POST', block=True)
-def submit_document(request):
-    """Limit document submissions to prevent abuse."""
+def submit_essay(request):
+    """Limit essay submissions to prevent abuse."""
     ...
 
 
@@ -304,7 +304,7 @@ class BurstRateThrottle(UserRateThrottle):
     rate = '5/minute'
 
 
-class PropertyViewSet(viewsets.ModelViewSet):
+class EssayViewSet(viewsets.ModelViewSet):
     def get_throttles(self):
         if self.action in ['create', 'update', 'destroy']:
             return [BurstRateThrottle()]
@@ -319,34 +319,35 @@ Django and DRF handle most input validation, but be explicit about boundaries.
 # Model-level validation (always runs)
 from django.core.validators import RegexValidator, MinValueValidator
 
-parcel_id = models.CharField(
-    max_length=20,
+slug = models.SlugField(
+    max_length=200,
+    unique=True,
     validators=[
         RegexValidator(
-            regex=r'^\d{2}-\d{2}-\d{3}-\d{3}$',
-            message='Parcel ID must match format XX-XX-XXX-XXX',
+            regex=r'^[a-z0-9]+(?:-[a-z0-9]+)*$',
+            message='Slug must contain only lowercase letters, numbers, and hyphens.',
         ),
     ],
 )
 
-purchase_price = models.DecimalField(
-    max_digits=12, decimal_places=2,
-    validators=[MinValueValidator(Decimal('0.01'))],
+word_count = models.PositiveIntegerField(
+    default=0,
+    validators=[MinValueValidator(0)],
 )
 
 
 # Serializer-level validation (API-specific rules)
-class PropertySerializer(serializers.ModelSerializer):
-    def validate_purchase_date(self, value):
-        if value > date.today():
-            raise serializers.ValidationError('Purchase date cannot be in the future.')
+class EssaySerializer(serializers.ModelSerializer):
+    def validate_date(self, value):
+        if value and value > date.today():
+            raise serializers.ValidationError('Publication date cannot be in the future.')
         return value
-    
+
     def validate(self, data):
         """Cross-field validation."""
-        if data.get('program') == 'featured_homes' and not data.get('purchase_price'):
+        if data.get('stage') == 'published' and not data.get('summary'):
             raise serializers.ValidationError({
-                'purchase_price': 'Purchase price is required for Featured Homes.'
+                'summary': 'A summary is required for published essays.'
             })
         return data
 ```

@@ -9,21 +9,21 @@ Most Django performance problems are database problems. The ORM makes it easy to
 The N+1 problem: you fetch N objects, then for each object you access a related object, triggering N additional queries.
 
 ```python
-# BAD: 1 query for properties + N queries for buyers
-properties = Property.objects.all()
-for prop in properties:
-    print(prop.buyer.name)  # each .buyer triggers a SELECT
+# BAD: 1 query for essays + N queries for authors
+essays = Essay.objects.all()
+for essay in essays:
+    print(essay.created_by.username)  # each .created_by triggers a SELECT
 
 # GOOD: 1 query with JOIN
-properties = Property.objects.select_related('buyer').all()
-for prop in properties:
-    print(prop.buyer.name)  # no additional queries
+essays = Essay.objects.select_related('created_by').all()
+for essay in essays:
+    print(essay.created_by.username)  # no additional queries
 
 # GOOD: For reverse FKs and M2M, use prefetch_related
-buyers = Buyer.objects.prefetch_related('properties').all()
-for buyer in buyers:
-    for prop in buyer.properties.all():  # pre-fetched, no extra queries
-        print(prop.address)
+projects = VideoProject.objects.prefetch_related('scenes').all()
+for project in projects:
+    for scene in project.scenes.all():  # pre-fetched, no extra queries
+        print(scene.title)
 ```
 
 **When to use which:**
@@ -33,17 +33,17 @@ for buyer in buyers:
 ```python
 from django.db.models import Prefetch
 
-# Prefetch with filtering: only active documents
-properties = Property.objects.prefetch_related(
+# Prefetch with filtering: only narration scenes
+projects = VideoProject.objects.prefetch_related(
     Prefetch(
-        'documents',
-        queryset=ComplianceDocument.objects.filter(status='active').order_by('-uploaded_at'),
-        to_attr='active_documents',
+        'scenes',
+        queryset=VideoScene.objects.filter(scene_type='narration').order_by('order'),
+        to_attr='narration_scenes',
     )
 )
-for prop in properties:
-    for doc in prop.active_documents:  # no extra queries, already filtered
-        print(doc.document_type)
+for project in projects:
+    for scene in project.narration_scenes:  # no extra queries, already filtered
+        print(scene.script_text)
 ```
 
 ### Annotations vs Python Computation
@@ -51,25 +51,22 @@ for prop in properties:
 Move computation to the database when you can. SQL is faster than Python for aggregation.
 
 ```python
-from django.db.models import Count, Avg, F, Q, Value, ExpressionWrapper, DurationField
+from django.db.models import Count, Avg, Sum, F, Q, Value, ExpressionWrapper, DurationField
 from django.utils import timezone
 
 # BAD: Computing in Python
-properties = Property.objects.all()
-for prop in properties:
-    doc_count = prop.documents.count()  # N queries
-    days = (timezone.now().date() - prop.purchase_date).days  # fine, but can't sort/filter
+projects = VideoProject.objects.all()
+for project in projects:
+    scene_count = project.scenes.count()  # N queries
+    days = (timezone.now().date() - project.created_at.date()).days  # fine, but can't sort/filter
 
 # GOOD: Annotate in SQL
-properties = Property.objects.annotate(
-    document_count=Count('documents'),
-    days_owned=ExpressionWrapper(
-        Value(timezone.now().date()) - F('purchase_date'),
-        output_field=DurationField(),
-    ),
+projects = VideoProject.objects.annotate(
+    scene_count=Count('scenes'),
+    total_duration=Sum('scenes__estimated_seconds'),
 ).filter(
-    document_count__lt=3,  # can now filter on computed values
-).order_by('-days_owned')  # and sort by them
+    scene_count__gt=0,  # can now filter on computed values
+).order_by('-total_duration')  # and sort by them
 ```
 
 ### only() and defer()
@@ -78,10 +75,10 @@ These limit which columns are fetched. Useful when models have large text or bin
 
 ```python
 # Fetch only the fields needed for a list view
-properties = Property.objects.only('id', 'address', 'status', 'program')
+essays = Essay.objects.only('id', 'title', 'stage', 'date')
 
-# Defer the heavy description field
-properties = Property.objects.defer('full_description', 'internal_notes')
+# Defer the heavy body and thesis fields
+essays = Essay.objects.defer('body', 'thesis')
 ```
 
 **Use sparingly.** Accessing a deferred field triggers a new query per object. Only use when you are certain the deferred fields will not be accessed. The cost of an accidental deferred field access is worse than fetching the full row.
@@ -89,26 +86,28 @@ properties = Property.objects.defer('full_description', 'internal_notes')
 ### Bulk Operations
 
 ```python
+from django.utils.text import slugify
+
 # BAD: N individual INSERT statements
-for address in address_list:
-    Property.objects.create(address=address, program='featured_homes')
+for title in title_list:
+    Essay.objects.create(title=title, slug=slugify(title), stage='drafting')
 
 # GOOD: Single bulk INSERT
-properties = [
-    Property(address=addr, program='featured_homes')
-    for addr in address_list
+essays = [
+    Essay(title=title, slug=slugify(title), stage='drafting')
+    for title in title_list
 ]
-Property.objects.bulk_create(properties, batch_size=500)
+Essay.objects.bulk_create(essays, batch_size=500)
 
 # GOOD: Bulk UPDATE
-Property.objects.filter(status='pending').update(status='active')
+Essay.objects.filter(stage='drafting', draft=True).update(stage='research')
 
 # GOOD: Bulk UPDATE with per-object values (Django 4.2+)
-properties = Property.objects.filter(status='pending')
-for prop in properties:
-    prop.status = 'active'
-    prop.reviewed_at = timezone.now()
-Property.objects.bulk_update(properties, ['status', 'reviewed_at'], batch_size=500)
+essays = Essay.objects.filter(stage='production')
+for essay in essays:
+    essay.stage = 'published'
+    essay.draft = False
+Essay.objects.bulk_update(essays, ['stage', 'draft'], batch_size=500)
 ```
 
 **bulk_create caveats:** Signals are not fired. `auto_now` / `auto_now_add` fields work, but custom `save()` logic is skipped. If your model's `save()` does important work, you need to handle it separately.
@@ -119,25 +118,25 @@ The ORM handles the vast majority of queries. Reach for raw SQL only when the OR
 
 ```python
 # Use .raw() for queries that return model instances
-properties = Property.objects.raw('''
-    SELECT p.*, COUNT(d.id) as doc_count
-    FROM properties_property p
-    LEFT JOIN properties_document d ON d.property_id = p.id
-    WHERE p.status = %s
+projects = VideoProject.objects.raw('''
+    SELECT p.*, COUNT(s.id) as scene_count
+    FROM content_videoproject p
+    LEFT JOIN content_videoscene s ON s.project_id = p.id
+    WHERE p.phase = %s
     GROUP BY p.id
-    HAVING COUNT(d.id) < %s
-''', ['active', 3])
+    HAVING COUNT(s.id) < %s
+''', ['production', 3])
 
 # Use connection.cursor() for non-model queries
 from django.db import connection
 
 with connection.cursor() as cursor:
     cursor.execute('''
-        SELECT program, COUNT(*), AVG(purchase_price)
-        FROM properties_property
-        WHERE status = %s
-        GROUP BY program
-    ''', ['active'])
+        SELECT stage, COUNT(*), AVG(word_count)
+        FROM content_essay
+        WHERE draft = %s
+        GROUP BY stage
+    ''', [False])
     results = cursor.fetchall()
 ```
 
@@ -160,7 +159,7 @@ CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': env('REDIS_URL', default='redis://127.0.0.1:6379/1'),
-        'KEY_PREFIX': 'myapp',
+        'KEY_PREFIX': 'content',
         'TIMEOUT': 300,  # 5 minutes default
     }
 }
@@ -172,28 +171,28 @@ CACHES = {
 from django.core.cache import cache
 
 
-def get_dashboard_stats():
-    """Cache expensive dashboard computation for 5 minutes."""
-    cache_key = 'dashboard:stats'
+def get_pipeline_stats():
+    """Cache expensive pipeline computation for 5 minutes."""
+    cache_key = 'pipeline:stats'
     stats = cache.get(cache_key)
     if stats is not None:
         return stats
 
     stats = {
-        'total_properties': Property.objects.count(),
-        'active': Property.objects.filter(status='active').count(),
-        'overdue': Property.objects.overdue().count(),
-        'avg_days': Property.objects.with_compliance_stats().aggregate(
-            avg=Avg('days_owned')
+        'total_essays': Essay.objects.count(),
+        'published': Essay.objects.filter(stage='published').count(),
+        'stale_drafts': Essay.objects.stale_drafts().count(),
+        'avg_word_count': Essay.objects.filter(stage='published').aggregate(
+            avg=Avg('word_count')
         )['avg'],
     }
     cache.set(cache_key, stats, timeout=300)
     return stats
 
 
-def invalidate_dashboard_cache():
-    """Call this when property data changes."""
-    cache.delete('dashboard:stats')
+def invalidate_pipeline_cache():
+    """Call this when essay data changes."""
+    cache.delete('pipeline:stats')
 ```
 
 ### Template Fragment Caching
@@ -206,8 +205,8 @@ Cache expensive template sections without caching the entire page.
 {# Cache the sidebar stats for 5 minutes #}
 {% cache 300 sidebar_stats request.user.id %}
     <div class="sidebar-stats">
-        <p>Active: {{ stats.active }}</p>
-        <p>Overdue: {{ stats.overdue }}</p>
+        <p>Published: {{ stats.published }}</p>
+        <p>Stale drafts: {{ stats.stale_drafts }}</p>
     </div>
 {% endcache %}
 ```
@@ -223,13 +222,13 @@ from django.utils.decorators import method_decorator
 
 # Function-based view
 @cache_page(60 * 5)  # 5 minutes
-def public_property_list(request):
+def public_essay_list(request):
     ...
 
 
 # Class-based view
 @method_decorator(cache_page(60 * 5), name='dispatch')
-class PublicPropertyListView(ListView):
+class PublicEssayListView(ListView):
     ...
 ```
 
@@ -243,31 +242,31 @@ from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
 
-@receiver([post_save, post_delete], sender=Property)
-def invalidate_property_caches(sender, instance, **kwargs):
-    cache.delete('dashboard:stats')
-    cache.delete(f'property:{instance.pk}')
+@receiver([post_save, post_delete], sender=Essay)
+def invalidate_essay_caches(sender, instance, **kwargs):
+    cache.delete('pipeline:stats')
+    cache.delete(f'essay:{instance.pk}')
     cache.delete_many([
-        f'property_list:program:{instance.program}',
-        'property_list:all',
+        f'essay_list:stage:{instance.stage}',
+        'essay_list:all',
     ])
 
 
 # Versioned cache keys for bulk invalidation
-def get_property_cache_version():
-    version = cache.get('property:version')
+def get_essay_cache_version():
+    version = cache.get('essay:version')
     if version is None:
         version = 1
-        cache.set('property:version', version)
+        cache.set('essay:version', version)
     return version
 
 
-def bump_property_cache_version():
-    """Increment the version to invalidate all property caches at once."""
+def bump_essay_cache_version():
+    """Increment the version to invalidate all essay caches at once."""
     try:
-        cache.incr('property:version')
+        cache.incr('essay:version')
     except ValueError:
-        cache.set('property:version', 1)
+        cache.set('essay:version', 1)
 ```
 
 ## Profiling and Debugging
@@ -316,7 +315,7 @@ def explain_query(queryset):
 
 # Usage
 explain_query(
-    Property.objects.filter(program='featured_homes', status='active')
+    Essay.objects.filter(stage='published', draft=False)
 )
 ```
 
@@ -331,18 +330,18 @@ explain_query(
 Lock down query counts in tests so regressions are caught immediately.
 
 ```python
-class TestPropertyListPerformance(TestCase):
+class TestEssayListPerformance(TestCase):
     def setUp(self):
         for _ in range(50):
-            PropertyFactory()
+            EssayFactory()
 
     def test_list_view_query_count(self):
         """The list view should use a bounded number of queries
-        regardless of how many properties exist."""
+        regardless of how many essays exist."""
         self.client.force_login(self.staff_user)
         with self.assertNumQueries(4):
-            # Expected: 1 session + 1 user + 1 count + 1 properties w/ joins
-            response = self.client.get(reverse('properties:list'))
+            # Expected: 1 session + 1 user + 1 count + 1 essays w/ joins
+            response = self.client.get(reverse('content:essay-list'))
             self.assertEqual(response.status_code, 200)
 ```
 
@@ -440,7 +439,7 @@ Offset-based pagination (`LIMIT 25 OFFSET 10000`) is slow on large tables becaus
 ```python
 # Cursor-based pagination using a unique, indexed column
 def get_next_page(last_id=None, page_size=25):
-    qs = Property.objects.order_by('id')
+    qs = Essay.objects.order_by('id')
     if last_id:
         qs = qs.filter(id__gt=last_id)
     return qs[:page_size]

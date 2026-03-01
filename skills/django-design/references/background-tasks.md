@@ -102,13 +102,13 @@ import asyncio
 from django.http import JsonResponse
 
 
-async def submit_application(request):
-    application = await sync_to_async(Application.objects.create)(
+async def submit_essay(request):
+    essay = await sync_to_async(Essay.objects.create)(
         **form.cleaned_data
     )
     # Fire and forget: send notification without blocking response
-    asyncio.create_task(send_notification_async(application))
-    return JsonResponse({'id': str(application.id)})
+    asyncio.create_task(notify_editors_async(essay))
+    return JsonResponse({'id': str(essay.id)})
 ```
 
 ## Task Design Principles
@@ -120,19 +120,19 @@ Tasks should be safe to run multiple times with the same arguments. Network fail
 ```python
 # BAD: Not idempotent. Running twice sends two emails.
 @app.task
-def send_welcome_email(user_id):
-    user = User.objects.get(pk=user_id)
-    send_email(user.email, 'Welcome!')
+def send_publish_notification(essay_id):
+    essay = Essay.objects.get(pk=essay_id)
+    send_email(essay.created_by.email, f'Your essay "{essay.title}" is live!')
 
 # GOOD: Idempotent. Checks before acting.
 @app.task
-def send_welcome_email(user_id):
-    user = User.objects.get(pk=user_id)
-    if user.welcome_email_sent:
+def send_publish_notification(essay_id):
+    essay = Essay.objects.get(pk=essay_id)
+    if essay.publish_notification_sent:
         return  # already done
-    send_email(user.email, 'Welcome!')
-    user.welcome_email_sent = True
-    user.save(update_fields=['welcome_email_sent'])
+    send_email(essay.created_by.email, f'Your essay "{essay.title}" is live!')
+    essay.publish_notification_sent = True
+    essay.save(update_fields=['publish_notification_sent'])
 ```
 
 ### Serializable Arguments
@@ -142,17 +142,17 @@ Pass IDs and simple values, not Django model instances. Model instances cannot b
 ```python
 # BAD: Passing a model instance
 @app.task
-def process_property(property):
-    property.generate_report()
+def serialize_essay(essay):
+    essay.export_to_markdown()
 
 # GOOD: Pass the ID, fetch fresh data in the task
 @app.task
-def process_property(property_id):
+def serialize_essay(essay_id):
     try:
-        property_obj = Property.objects.get(pk=property_id)
-    except Property.DoesNotExist:
+        essay = Essay.objects.get(pk=essay_id)
+    except Essay.DoesNotExist:
         return  # object was deleted between enqueue and execution
-    property_obj.generate_report()
+    essay.export_to_markdown()
 ```
 
 ### Retry Strategy
@@ -166,14 +166,15 @@ def process_property(property_id):
     retry_backoff=True,      # exponential backoff: 60s, 120s, 240s
     retry_jitter=True,       # add randomness to prevent thundering herd
 )
-def sync_with_filemaker(self, property_id):
+def push_to_static_site(self, essay_id):
     try:
-        property_obj = Property.objects.get(pk=property_id)
-        client = FileMakerClient()
-        client.update_record('Properties', property_obj.filemaker_id, {
-            'status': property_obj.status,
-        })
-    except FileMakerClient.ConnectionError as exc:
+        essay = Essay.objects.get(pk=essay_id)
+        client = GitHubClient()
+        client.commit_file(
+            path=f'content/essays/{essay.slug}.md',
+            content=essay.to_markdown(),
+        )
+    except GitHubClient.ConnectionError as exc:
         raise self.retry(exc=exc)
 ```
 
@@ -186,14 +187,14 @@ Always set time limits. A task without a timeout can block a worker forever.
     time_limit=300,       # hard kill after 5 minutes
     soft_time_limit=240,  # raise SoftTimeLimitExceeded after 4 minutes
 )
-def generate_compliance_report(program_id):
+def generate_content_report(stage=None):
     try:
-        report = build_report(program_id)
+        report = build_content_report(stage=stage)
         save_report(report)
     except SoftTimeLimitExceeded:
         # Clean up and log that the report was too large
-        logger.error('Report generation timed out for program %s', program_id)
-        mark_report_failed(program_id)
+        logger.error('Report generation timed out for stage %s', stage)
+        mark_report_failed(stage)
 ```
 
 ## Queue Architecture
@@ -206,8 +207,8 @@ Separate urgent tasks from bulk work.
 # Celery: route tasks to specific queues
 CELERY_TASK_ROUTES = {
     'apps.notifications.tasks.send_urgent_alert': {'queue': 'high'},
-    'apps.reports.tasks.generate_monthly_report': {'queue': 'low'},
-    'apps.sync.tasks.*': {'queue': 'sync'},
+    'apps.content.tasks.generate_monthly_report': {'queue': 'low'},
+    'apps.content.tasks.serialize_*': {'queue': 'export'},
 }
 
 # Start workers for specific queues
@@ -221,16 +222,16 @@ Tasks that fail after all retries need somewhere to go for investigation.
 
 ```python
 @app.task(bind=True, max_retries=3)
-def risky_external_call(self, record_id):
+def push_content_to_github(self, essay_id):
     try:
-        result = external_api.call(record_id)
+        result = github_api.commit_essay(essay_id)
         return result
     except Exception as exc:
         if self.request.retries >= self.max_retries:
             # All retries exhausted: log for manual investigation
             FailedTask.objects.create(
-                task_name='risky_external_call',
-                args={'record_id': record_id},
+                task_name='push_content_to_github',
+                args={'essay_id': essay_id},
                 exception=str(exc),
                 failed_at=timezone.now(),
             )
@@ -249,12 +250,12 @@ def risky_external_call(self, record_id):
 INSTALLED_APPS += ['django_celery_beat']
 
 CELERY_BEAT_SCHEDULE = {
-    'check-overdue-properties': {
-        'task': 'apps.compliance.tasks.check_overdue_properties',
+    'check-stale-drafts': {
+        'task': 'apps.content.tasks.check_stale_drafts',
         'schedule': crontab(hour=8, minute=0),  # daily at 8 AM
     },
-    'sync-filemaker-data': {
-        'task': 'apps.sync.tasks.sync_all_records',
+    'serialize-published-content': {
+        'task': 'apps.content.tasks.serialize_all_published',
         'schedule': timedelta(minutes=15),
     },
     'cleanup-expired-sessions': {
@@ -269,34 +270,34 @@ CELERY_BEAT_SCHEDULE = {
 For simpler setups, cron + management commands work fine.
 
 ```python
-# apps/compliance/management/commands/check_overdue.py
+# apps/content/management/commands/check_stale_drafts.py
 from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
-    help = 'Check for overdue compliance items and send notifications'
+    help = 'Check for essays stuck in drafting stage and notify editors'
 
     def add_arguments(self, parser):
         parser.add_argument(
             '--dry-run',
             action='store_true',
-            help='Report overdue items without sending notifications',
+            help='Report stale drafts without sending notifications',
         )
 
     def handle(self, *args, **options):
-        overdue = Property.objects.overdue()
-        self.stdout.write(f'Found {overdue.count()} overdue properties')
+        stale = Essay.objects.stale_drafts()
+        self.stdout.write(f'Found {stale.count()} stale drafts')
 
         if not options['dry_run']:
-            for prop in overdue:
-                send_overdue_notification(prop)
+            for essay in stale:
+                send_stale_draft_notification(essay)
 
         self.stdout.write(self.style.SUCCESS('Done'))
 ```
 
 ```bash
 # crontab entry
-0 8 * * * cd /app && python manage.py check_overdue
+0 8 * * * cd /app && python manage.py check_stale_drafts
 ```
 
 ## Testing Background Tasks
@@ -313,22 +314,22 @@ CELERY_TASK_EAGER_PROPAGATES = True  # exceptions propagate normally
 from unittest.mock import patch
 
 
-class TestSendWelcomeEmail(TestCase):
-    def test_sends_email_for_new_user(self):
-        user = UserFactory(welcome_email_sent=False)
-        send_welcome_email(user.id)
-        user.refresh_from_db()
-        self.assertTrue(user.welcome_email_sent)
+class TestSendPublishNotification(TestCase):
+    def test_sends_email_for_newly_published(self):
+        essay = EssayFactory(publish_notification_sent=False)
+        send_publish_notification(essay.id)
+        essay.refresh_from_db()
+        self.assertTrue(essay.publish_notification_sent)
 
     def test_skips_if_already_sent(self):
-        user = UserFactory(welcome_email_sent=True)
+        essay = EssayFactory(publish_notification_sent=True)
         with patch('apps.notifications.tasks.send_email') as mock_send:
-            send_welcome_email(user.id)
+            send_publish_notification(essay.id)
             mock_send.assert_not_called()
 
-    def test_handles_deleted_user(self):
-        # Task should not crash if the user was deleted
-        send_welcome_email(99999)  # non-existent ID
+    def test_handles_deleted_essay(self):
+        # Task should not crash if the essay was deleted
+        send_publish_notification(99999)  # non-existent ID
 ```
 
 ### Testing django-rq
@@ -337,16 +338,16 @@ class TestSendWelcomeEmail(TestCase):
 from django_rq import get_queue
 
 
-class TestPropertySync(TestCase):
+class TestEssayExport(TestCase):
     def test_task_enqueues(self):
         queue = get_queue('default')
         queue.empty()
 
-        sync_property.delay(self.property.id)
+        serialize_essay.delay(self.essay.id)
 
         self.assertEqual(queue.count, 1)
         job = queue.jobs[0]
-        self.assertEqual(job.args[0], self.property.id)
+        self.assertEqual(job.args[0], self.essay.id)
 ```
 
 ## Monitoring

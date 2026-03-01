@@ -86,7 +86,7 @@ loglevel = "info"
 server {
     listen 80;
     server_name yourdomain.org;
-    
+
     # Redirect HTTP to HTTPS
     return 301 https://$server_name$request_uri;
 }
@@ -94,23 +94,23 @@ server {
 server {
     listen 443 ssl;
     server_name yourdomain.org;
-    
+
     ssl_certificate /etc/letsencrypt/live/yourdomain.org/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/yourdomain.org/privkey.pem;
-    
+
     # Static files served directly by Nginx
     location /static/ {
         alias /path/to/staticfiles/;
         expires 30d;
         add_header Cache-Control "public, immutable";
     }
-    
+
     # Media files
     location /media/ {
         alias /path/to/media/;
         expires 7d;
     }
-    
+
     # Proxy to Gunicorn
     location / {
         proxy_pass http://127.0.0.1:8000;
@@ -119,7 +119,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
-    
+
     client_max_body_size 20M;
 }
 ```
@@ -175,7 +175,7 @@ services:
       - db
       - redis
     command: python manage.py runserver 0.0.0.0:8000
-  
+
   db:
     image: postgres:16
     environment:
@@ -186,7 +186,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-  
+
   redis:
     image: redis:7-alpine
     ports:
@@ -309,7 +309,7 @@ from django.db import connection
 def health_check(request):
     """Basic health check for load balancers and monitoring."""
     health = {'status': 'ok'}
-    
+
     # Check database
     try:
         with connection.cursor() as cursor:
@@ -318,7 +318,7 @@ def health_check(request):
     except Exception:
         health['database'] = 'error'
         health['status'] = 'degraded'
-    
+
     status_code = 200 if health['status'] == 'ok' else 503
     return JsonResponse(health, status=status_code)
 
@@ -349,29 +349,29 @@ python manage.py migrate --plan
 ```
 
 ```python
-# migrations/0005_backfill_parcel_format.py
+# migrations/0005_backfill_word_count.py
 from django.db import migrations
 
 
 class Migration(migrations.Migration):
     dependencies = [
-        ('properties', '0004_add_formatted_parcel_id'),
+        ('content', '0004_add_word_count'),
     ]
-    
+
     operations = [
         migrations.RunSQL(
             sql="""
-                UPDATE properties_property
-                SET formatted_parcel_id = 
-                    SUBSTRING(parcel_id, 1, 2) || '-' ||
-                    SUBSTRING(parcel_id, 3, 2) || '-' ||
-                    SUBSTRING(parcel_id, 5, 3) || '-' ||
-                    SUBSTRING(parcel_id, 8, 3)
-                WHERE formatted_parcel_id IS NULL
+                UPDATE content_essay
+                SET word_count = array_length(
+                    regexp_split_to_array(trim(body), '\\s+'), 1
+                )
+                WHERE word_count IS NULL
+                AND body IS NOT NULL
+                AND body != ''
             """,
             reverse_sql="""
-                UPDATE properties_property
-                SET formatted_parcel_id = NULL
+                UPDATE content_essay
+                SET word_count = NULL
             """,
         ),
     ]

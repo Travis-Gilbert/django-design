@@ -1,9 +1,9 @@
 {
   "name": "django-design",
-  "version": "2.0.0",
-  "description": "Production-grade Django development toolkit. Skills for architecture guidance, commands for interactive project and app scaffolding, and agents for proactive code review, migration safety, and performance profiling.",
+  "version": "3.0.0",
+  "description": "Full-stack Django development toolkit. Skills for backend architecture (models, views, APIs, auth, deployment) and frontend integration (HTMX, Alpine.js, Tailwind CSS, D3, django-cotton components, design systems). Commands for scaffolding projects, apps, APIs, and components. Agents for architecture review, API design review, frontend integration review, migration safety, and performance profiling.",
   "author": {
     "name": "Travis Gilbert"
   },
-  "keywords": ["django", "python", "web", "architecture", "scaffold", "code-review", "performance", "migrations", "cms", "htmx"]
+  "keywords": ["django", "python", "web", "architecture", "scaffold", "code-review", "performance", "migrations", "cms", "htmx", "alpine", "tailwind", "d3", "cotton", "drf", "api", "design-system", "frontend"]
 }

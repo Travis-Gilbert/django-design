@@ -49,7 +49,7 @@ Usage: Type `/django-app` in Claude Code and follow the prompts.
 
 #### /django-model
 
-Interactive model generation from domain descriptions. You describe the real-world process ("property inspections with photos, checklists, and pass/fail reports") and it generates models with proper field types, relationships, indexes, constraints, managers, admin configuration, and test factories.
+Interactive model generation from domain descriptions. You describe the real-world process ("essays with pipeline stages, field notes, research sources, and shelf entries") and it generates models with proper field types, relationships, indexes, constraints, managers, admin configuration, and test factories.
 
 Usage: Type `/django-model` in Claude Code and follow the prompts.
 

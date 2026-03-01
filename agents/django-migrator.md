@@ -4,7 +4,7 @@ description: Use this agent to review Django migrations for safety, catch danger
 
   <example>
   Context: User just ran makemigrations and new migration files were created
-  user: "I just ran makemigrations for the properties app"
+  user: "I just ran makemigrations for the content app"
   assistant: "Let me review the new migrations for deployment safety."
   <commentary>
   New migration files were created. Proactively trigger the django-migrator agent to check for dangerous operations like dropping columns, renaming fields, adding non-nullable columns, and operations that lock tables.
@@ -88,31 +88,31 @@ You are a Django migration safety reviewer. Your job is to catch deployment-brea
 ```python
 # BAD: Loads entire table into memory
 def forward(apps, schema_editor):
-    Property = apps.get_model('properties', 'Property')
-    for prop in Property.objects.all():  # loads everything
-        prop.formatted_address = format_address(prop.address)
-        prop.save()
+    Essay = apps.get_model('content', 'Essay')
+    for essay in Essay.objects.all():  # loads everything
+        essay.word_count = count_words(essay.body)
+        essay.save()
 
 # GOOD: Batch processing with SQL
 def forward(apps, schema_editor):
     schema_editor.execute("""
-        UPDATE properties_property
-        SET formatted_address = CONCAT(address, ', ', city, ', ', state)
-        WHERE formatted_address IS NULL
+        UPDATE content_essay
+        SET word_count = array_length(regexp_split_to_array(body, '\\s+'), 1)
+        WHERE word_count IS NULL
     """)
 
 # GOOD: Batch processing with Python (when SQL is not sufficient)
 def forward(apps, schema_editor):
-    Property = apps.get_model('properties', 'Property')
+    Essay = apps.get_model('content', 'Essay')
     batch_size = 1000
-    total = Property.objects.count()
+    total = Essay.objects.count()
     for start in range(0, total, batch_size):
-        batch = Property.objects.all()[start:start + batch_size]
+        batch = Essay.objects.all()[start:start + batch_size]
         updates = []
-        for prop in batch:
-            prop.formatted_address = complex_format(prop.address)
-            updates.append(prop)
-        Property.objects.bulk_update(updates, ['formatted_address'])
+        for essay in batch:
+            essay.word_count = count_words(essay.body)
+            updates.append(essay)
+        Essay.objects.bulk_update(updates, ['word_count'])
 ```
 
 **RunSQL operations:**

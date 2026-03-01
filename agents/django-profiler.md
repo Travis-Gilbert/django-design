@@ -4,7 +4,7 @@ description: Use this agent to profile Django views, querysets, and templates fo
 
   <example>
   Context: User reports a slow page or API endpoint
-  user: "The property list page is really slow" or "This endpoint takes 5 seconds"
+  user: "The essay list page is really slow" or "This endpoint takes 5 seconds"
   assistant: "I'll use the django-profiler agent to trace the performance bottleneck."
   <commentary>
   User reporting a performance problem. Trigger the profiler to analyze the view, trace its queryset, check for N+1 patterns, and measure template rendering cost.
@@ -68,12 +68,12 @@ For each queryset in the view:
 **Check for N+1 patterns:**
 ```
 # Walk through the code path:
-# 1. View fetches properties = Property.objects.all()  → 1 query
-# 2. Template iterates {% for prop in properties %}
-# 3. Template accesses {{ prop.buyer.name }}            → N queries (N+1!)
-# 4. Template accesses {{ prop.documents.count }}        → N queries (N+1!)
+# 1. View fetches essays = Essay.objects.all()  → 1 query
+# 2. Template iterates {% for essay in essays %}
+# 3. Template accesses {{ essay.created_by.username }}    → N queries (N+1!)
+# 4. Template accesses {{ essay.field_notes.count }}      → N queries (N+1!)
 #
-# Fix: Property.objects.select_related('buyer').annotate(doc_count=Count('documents'))
+# Fix: Essay.objects.select_related('created_by').annotate(note_count=Count('field_notes'))
 ```
 
 **Check index coverage:**
@@ -90,9 +90,9 @@ For each queryset in the view:
 
 **Nested serializer N+1:**
 ```python
-# If PropertySerializer includes BuyerSerializer(source='buyer')
-# and the view's queryset does not select_related('buyer'),
-# each property triggers a separate buyer query.
+# If EssaySerializer includes UserSerializer(source='created_by')
+# and the view's queryset does not select_related('created_by'),
+# each essay triggers a separate user query.
 ```
 
 **SerializerMethodField efficiency:**
@@ -125,42 +125,42 @@ For each queryset in the view:
 Present findings as a performance trace:
 
 ```
-## View: PropertyListView (apps/properties/views.py:45)
+## View: EssayListView (apps/content/views.py:45)
 
-**Request Path:** GET /api/v1/properties/
-**Expected Query Count:** 27 queries (for 25 properties)
+**Request Path:** GET /api/v1/essays/
+**Expected Query Count:** 27 queries (for 25 essays)
 **Optimal Query Count:** 3 queries
 
 ### Query Trace
 
 | # | Source | Query | Fix |
 |---|--------|-------|-----|
-| 1 | View queryset | SELECT * FROM properties | Base query, fine |
-| 2-26 | Serializer: buyer field | SELECT * FROM buyers WHERE id = ? (x25) | Add .select_related('buyer') |
-| 27 | Serializer: doc_count method | SELECT COUNT(*) FROM documents WHERE property_id = ? (x25) | Add .annotate(doc_count=Count('documents')) |
+| 1 | View queryset | SELECT * FROM content_essay | Base query, fine |
+| 2-26 | Serializer: created_by field | SELECT * FROM auth_user WHERE id = ? (x25) | Add .select_related('created_by') |
+| 27 | Serializer: note_count method | SELECT COUNT(*) FROM content_fieldnote WHERE essay_id = ? (x25) | Add .annotate(note_count=Count('field_notes')) |
 
 ### Missing Indexes
 
 | Field | Usage | Impact |
 |-------|-------|--------|
-| `Property.program` | Filtered in queryset (.filter(program=...)) | Seq scan on 50k rows |
-| `Property.status` | Filtered and ordered | Seq scan + sort |
+| `Essay.stage` | Filtered in queryset (.filter(stage=...)) | Seq scan on 50k rows |
+| `Essay.date` | Filtered and ordered | Seq scan + sort |
 
 ### Recommended Fixes (by impact)
 
-**1. Add select_related('buyer') to queryset**
+**1. Add select_related('created_by') to queryset**
    Reduces: 25 queries → 0 additional queries
-   Change: `Property.objects.all()` → `Property.objects.select_related('buyer').all()`
+   Change: `Essay.objects.all()` → `Essay.objects.select_related('created_by').all()`
 
-**2. Annotate document count instead of computing in serializer**
+**2. Annotate field note count instead of computing in serializer**
    Reduces: 25 queries → 0 additional queries
-   Change: Add `.annotate(doc_count=Count('documents'))` to queryset
-   Update: Change serializer method to use `obj.doc_count`
+   Change: Add `.annotate(note_count=Count('field_notes'))` to queryset
+   Update: Change serializer method to use `obj.note_count`
 
-**3. Add composite index on (program, status)**
+**3. Add composite index on (stage, date)**
    Reduces: Seq scan → Index scan
    Change: Add to model Meta:
-   `models.Index(fields=['program', 'status'], name='idx_program_status')`
+   `models.Index(fields=['stage', 'date'], name='idx_stage_date')`
 
 **Net improvement: 27 queries → 3 queries (89% reduction)**
 ```
@@ -175,13 +175,13 @@ python manage.py shell -c "
 from django.test import RequestFactory
 from django.test.utils import override_settings
 from django.db import connection, reset_queries
-from apps.properties.views import PropertyListView
+from apps.content.views import EssayListView
 
 reset_queries()
 factory = RequestFactory()
-request = factory.get('/api/v1/properties/')
+request = factory.get('/api/v1/essays/')
 request.user = User.objects.first()
-response = PropertyListView.as_view()(request)
+response = EssayListView.as_view()(request)
 print(f'Query count: {len(connection.queries)}')
 for q in connection.queries:
     print(f'  [{q[\"time\"]}s] {q[\"sql\"][:100]}')
