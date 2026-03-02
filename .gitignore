@@ -1,4 +1,27 @@
-.DS_Store
+# Reference repos (cloned separately, not version controlled)
+refs/
+
+# Loose files that may exist at root from V3.1
 *.pyc
 __pycache__/
+.DS_Store
+
+# Environment
 .env
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Firebase
+firebase-debug.log
+
+# Notes (private)
+docs/notes/
+
+# Large data files in brushable-scatterplot (if at root)
+brushable-scatterplot/
