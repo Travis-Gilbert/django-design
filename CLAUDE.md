@@ -43,7 +43,7 @@ Do NOT rely on training data for framework internals. Instead:
 
 - **Tailwind CSS integration**: check `refs/django-tailwind-cli-main/` and `refs/django-tailwind-master/` for different Tailwind integration approaches.
 
-- **D3 / visualization questions**: check `refs/d3-main/` for D3 source, `refs/plot-main/` for Observable Plot, `refs/framework-main/` for Observable Framework. Check `refs/brushable-scatterplot/` for an interactive D3 example.
+- **D3 / visualization questions**: check `refs/d3-main/` for D3 source, `refs/plot-main/` for Observable Plot, `refs/framework-main/` for Observable Framework. Check `refs/brushable-scatterplot/` for an interactive D3 example. Also check `D3js-code-examples-I-love/` for curated D3 code examples (force graphs, treemaps, circle packing, star maps, voronoi stippling) and `plot-rough/` for an Observable Plot example with rough/sketchy rendering style.
 
 - **Filtering questions**: check `refs/django-filter-main/` for FilterSet patterns. Pairs with DRF for API filtering.
 
@@ -128,11 +128,13 @@ Cross-service references use slug strings, not ForeignKeys. SourceLink uses `con
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Directory structure | Partial | agents/, refs/, examples/ exist; need remaining V4 dirs |
+| Directory structure | Done | agents/, refs/, examples/, skills/, data/ all exist |
 | Existing agents (9) | Done | api-designer, backend-developer, build-engineer, django-developer, fullstack-developer, legacy-modernizer, ml-engineer, python-pro, refactoring-specialist |
-| New agents (13) | Not started | orm, drf, admin, template, celery, auth, testing, deployment, performance, security, data, cms, migration specialists |
+| New agents (13) | Done | orm, drf, admin, template, celery, auth, testing, deployment, performance, security, data, cms, migration specialists |
+| Skills (6) | Done | django-design, django-backend, django-api, django-frontend, django-ops, django-d3 with references |
 | Core refs (V3.1) | Done | alpine, d3, cotton, DRF, ninja, imagekit, unicorn, tailwind, htmx, plot, framework |
 | New refs (V4) | Partial | django-main, celery-main, django-htmx-main, django-filter-main, django-template-partials-main cloned; missing pytest-django, factory-boy, gunicorn, whitenoise, debug-toolbar, pydantic, httpx, django-cachalot, django-lifecycle |
+| D3 examples | Done | D3js-code-examples-I-love/ (force graphs, treemaps, circle packing, star maps), plot-rough/ (Observable Plot with rough styling) |
 | Example patterns | Not started | orm-patterns, admin-patterns, drf-patterns, celery-patterns, htmx-patterns, testing-patterns, deployment-configs, d3-django |
 | Content publishing site | Not started | Full example project |
 | Test data | Partial | flare.json exists; need essays-sample, sources-sample, threads-sample, content-graph |
@@ -145,13 +147,12 @@ Cross-service references use slug strings, not ForeignKeys. SourceLink uses `con
 ## Next Steps
 
 1. Clone remaining V4 reference repos (pytest-django, factory-boy, gunicorn, whitenoise, debug-toolbar, pydantic, httpx, django-cachalot, django-lifecycle)
-2. Write the 13 new agent definitions
-3. Update AGENTS.md registry with new agents and routing rules
-4. Build example pattern directories
-5. Build the content-publishing-site example project
-6. Create test data files
-7. Write references/ architecture docs
-8. Create templates/ starter scaffolds
+2. Update AGENTS.md registry with new agents and routing rules
+3. Build example pattern directories
+4. Build the content-publishing-site example project
+5. Create test data files
+6. Write references/ architecture docs
+7. Create templates/ starter scaffolds
 
 ---
 
@@ -162,6 +163,8 @@ Cross-service references use slug strings, not ForeignKeys. SourceLink uses `con
 | V4 upgrade from V3.1 | Add Django source, new agents, better organization, example domain | 2026-03-01 |
 | Slug-based cross-service references | Two Django services can not share ForeignKeys; slugs are portable | 2026-03-01 |
 | Cotton src-loose directory | Quick grep access to Cotton internals without navigating deep package structure | Pre-V4 |
+| Grouped skill split (6 skills) | Monolithic skill (7,450 lines of references) too broad for keyword matching; 6 domain-focused skills enable precise context loading | 2026-03-02 |
+| D3 code examples as top-level dirs | Curated D3 examples and plot-rough kept as standalone reference directories alongside refs/ | 2026-03-02 |
 
 ---
 

@@ -1,0 +1,159 @@
+# ---------------------------------------------------------------------------
+# Docker Compose for local Django development
+#
+# Usage:
+#   docker compose up              # Start all services
+#   docker compose up -d           # Start in background
+#   docker compose exec web bash   # Shell into the web container
+#   docker compose down -v         # Stop and remove volumes
+#
+# Create a .env file in the same directory (see .env.example).
+# ---------------------------------------------------------------------------
+
+services:
+
+  # -------------------------------------------------------------------------
+  # Django web application
+  # -------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      gunicorn myproject.wsgi:application
+        --bind 0.0.0.0:8000
+        --reload
+        --workers 2
+        --access-logfile -
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    volumes:
+      # Mount the source code so file changes trigger gunicorn reload.
+      - .:/app
+      # Anonymous volume prevents the container's static files from being
+      # overwritten by the bind mount above.
+      - /app/staticfiles
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=myproject.settings.local
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # PostgreSQL database
+  # -------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-myproject}
+      POSTGRES_USER: ${POSTGRES_USER:-django}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-django} -d ${POSTGRES_DB:-myproject}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Redis (caching + Celery broker)
+  # -------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Celery worker
+  # -------------------------------------------------------------------------
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      celery -A myproject worker
+        --loglevel=info
+        --concurrency=2
+        --events
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=myproject.settings.local
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Celery beat (periodic task scheduler)
+  # -------------------------------------------------------------------------
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      celery -A myproject beat
+        --loglevel=info
+        --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=myproject.settings.local
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Flower (Celery monitoring, optional)
+  # Uncomment to enable the Celery dashboard at http://localhost:5555
+  # -------------------------------------------------------------------------
+  # flower:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   command: >
+  #     celery -A myproject flower
+  #       --port=5555
+  #       --broker=redis://redis:6379/0
+  #   ports:
+  #     - "5555:5555"
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
+
+volumes:
+  postgres_data:
+  redis_data:

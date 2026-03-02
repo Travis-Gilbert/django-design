@@ -1,0 +1,531 @@
+{# ======================================================================
+   HTMX Pattern: Partials
+   =======================
+
+   Demonstrates partial template patterns for HTMX-driven Django views.
+   These are the small template fragments that views return for HTMX
+   requests. Each partial is self-contained and renders a single piece
+   of the UI.
+
+   Covers:
+   - List item partial (essay row, field note row)
+   - Form partial for edit-in-place
+   - Search results partial
+   - Pagination partial with next-page sentinel
+   - Empty state partial
+   - django-template-partials inline partials ({% partialdef %})
+
+   Uses Cotton component syntax (c-component tags) where appropriate.
+
+   Domain: Publishing API with Essay, Tag, FieldNote models.
+   ====================================================================== #}
+
+
+{# ======================================================================
+   Partial 1: Essay row (table row display)
+   ======================================================================
+
+   Used by: essay_list view, essay_quick_create view
+   Returned after: successful create or when rendering the list
+
+   This is the "display" state of a list item. The edit button swaps
+   this row for the form partial. The delete button removes it.
+   ====================================================================== #}
+
+{# --- content/partials/essay_row.html --- #}
+<tr id="essay-{{ essay.pk }}" class="group">
+    <td>
+        <a href="{% url 'essays:detail' essay.slug %}" class="font-medium">
+            {{ essay.title }}
+        </a>
+        {% if essay.is_featured %}
+            <c-badge variant="amber">Featured</c-badge>
+        {% endif %}
+    </td>
+    <td>
+        <c-stage-badge :stage="essay.stage" />
+    </td>
+    <td>{{ essay.author.get_full_name|default:essay.author.username }}</td>
+    <td>{{ essay.word_count|intcomma }} words</td>
+    <td>{{ essay.updated_at|timesince }} ago</td>
+    <td class="text-right opacity-0 group-hover:opacity-100 transition-opacity">
+        <a href="{% url 'essays:edit' essay.slug %}"
+           class="btn btn-sm">
+            Edit
+        </a>
+        {% if essay.stage != 'published' %}
+        <button hx-post="{% url 'essays:stage_advance' essay.slug %}"
+                hx-target="#essay-{{ essay.pk }}"
+                hx-swap="outerHTML"
+                class="btn btn-sm btn-primary">
+            Advance Stage
+        </button>
+        {% endif %}
+    </td>
+</tr>
+
+
+{# ======================================================================
+   Partial 2: Field note row (display state)
+   ======================================================================
+
+   Used by: field_note_edit view (on successful save)
+   The inline edit button loads the form partial (Partial 3) into
+   this row via hx-get.
+   ====================================================================== #}
+
+{# --- content/partials/field_note_row.html --- #}
+<tr id="note-{{ note.pk }}">
+    <td>{{ note.title }}</td>
+    <td>
+        <c-stage-badge :stage="note.stage" />
+    </td>
+    <td>{{ note.updated_at|timesince }} ago</td>
+    <td>
+        <button hx-get="{% url 'notes:edit' note.pk %}"
+                hx-target="closest tr"
+                hx-swap="outerHTML"
+                class="btn btn-sm">
+            Edit
+        </button>
+        <button hx-delete="{% url 'notes:delete' note.pk %}"
+                hx-confirm="Delete this note? This cannot be undone."
+                hx-target="closest tr"
+                hx-swap="outerHTML swap:500ms"
+                class="btn btn-sm btn-danger">
+            Delete
+        </button>
+    </td>
+</tr>
+
+
+{# ======================================================================
+   Partial 3: Field note form (edit-in-place)
+   ======================================================================
+
+   Used by: field_note_edit view (GET to show form, POST on error)
+   Replaces the display row (Partial 2) when the user clicks Edit.
+   On successful save, the view returns Partial 2 again.
+   On validation error, the view returns this partial with form errors.
+   ====================================================================== #}
+
+{# --- content/partials/field_note_form.html --- #}
+<tr id="note-{{ note.pk }}" class="bg-blue-50">
+    <td colspan="4">
+        <form hx-post="{% url 'notes:edit' note.pk %}"
+              hx-target="closest tr"
+              hx-swap="outerHTML">
+            {% csrf_token %}
+
+            <div class="grid grid-cols-1 gap-3 p-3">
+                <c-form-field label="Title" :errors="form.title.errors">
+                    <input type="text"
+                           name="title"
+                           value="{{ form.title.value|default:'' }}"
+                           class="input w-full"
+                           required
+                           autofocus>
+                </c-form-field>
+
+                <c-form-field label="Body" :errors="form.body.errors">
+                    <textarea name="body"
+                              rows="3"
+                              class="input w-full"
+                              required>{{ form.body.value|default:'' }}</textarea>
+                </c-form-field>
+
+                <c-form-field label="Related Essay" :errors="form.related_essay.errors">
+                    <select name="related_essay" class="input w-full">
+                        <option value="">None</option>
+                        {% for essay in form.related_essay.field.queryset %}
+                        <option value="{{ essay.pk }}"
+                                {% if form.related_essay.value == essay.pk|stringformat:'s' %}
+                                selected
+                                {% endif %}>
+                            {{ essay.title }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </c-form-field>
+
+                <div class="flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        Save
+                    </button>
+                    {# Cancel reloads the display row without saving #}
+                    <button type="button"
+                            hx-get="{% url 'notes:row' note.pk %}"
+                            hx-target="closest tr"
+                            hx-swap="outerHTML"
+                            class="btn btn-sm">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </form>
+    </td>
+</tr>
+
+
+{# ======================================================================
+   Partial 4: Search results
+   ======================================================================
+
+   Used by: essay_search view
+   Swapped into #search-results when the user types in the search box.
+   Each result is a clickable card linking to the essay detail page.
+   ====================================================================== #}
+
+{# --- content/partials/search_results.html --- #}
+<div id="search-results-inner">
+    <p class="text-sm text-gray-500 mb-3">
+        {{ essays|length }} result{{ essays|length|pluralize }} for "{{ query }}"
+    </p>
+
+    {% for essay in essays %}
+    <c-essay-search-result :essay="essay" :query="query">
+        <a href="{% url 'essays:detail' essay.slug %}"
+           class="block p-3 border rounded hover:bg-gray-50 mb-2">
+            <h3 class="font-medium">{{ essay.title }}</h3>
+            <p class="text-sm text-gray-600 mt-1">
+                {{ essay.excerpt|truncatewords:30 }}
+            </p>
+            <div class="flex gap-2 mt-2 text-xs text-gray-400">
+                <span>{{ essay.author.get_full_name }}</span>
+                <span>{{ essay.word_count }} words</span>
+                <span>{{ essay.published_at|date:"M j, Y" }}</span>
+            </div>
+        </a>
+    </c-essay-search-result>
+    {% empty %}
+        {# No results: show empty state inline #}
+        <div class="text-center py-8 text-gray-500">
+            <p>No essays found matching "{{ query }}".</p>
+            <p class="text-sm mt-1">Try a different search term.</p>
+        </div>
+    {% endfor %}
+</div>
+
+
+{# ======================================================================
+   Partial 5: Pagination sentinel (infinite scroll)
+   ======================================================================
+
+   Used by: essay_feed view
+   Each page of results includes essay cards followed by this sentinel.
+   When the sentinel scrolls into the viewport, hx-trigger="revealed"
+   fires and HTMX loads the next page, appending it after this element.
+
+   The sentinel itself is part of the response, so the chain continues.
+   When there are no more pages, no sentinel is rendered and scrolling
+   stops naturally.
+   ====================================================================== #}
+
+{# --- content/partials/essay_feed_page.html --- #}
+{% for essay in page %}
+<article class="essay-card border rounded-lg p-6 mb-4">
+    <div class="flex items-start justify-between">
+        <div>
+            <h2 class="text-xl font-semibold">
+                <a href="{% url 'essays:detail' essay.slug %}">
+                    {{ essay.title }}
+                </a>
+            </h2>
+            {% if essay.subtitle %}
+            <p class="text-gray-600 mt-1">{{ essay.subtitle }}</p>
+            {% endif %}
+        </div>
+        <c-stage-badge :stage="essay.stage" />
+    </div>
+
+    <p class="text-gray-700 mt-3">{{ essay.excerpt|truncatewords:40 }}</p>
+
+    <footer class="flex items-center gap-4 mt-4 text-sm text-gray-500">
+        <span>{{ essay.author.get_full_name }}</span>
+        <span>{{ essay.reading_time_minutes }} min read</span>
+        <span>{{ essay.published_at|date:"M j, Y" }}</span>
+        <div class="flex gap-1">
+            {% for tag in essay.tags.all %}
+            <c-tag-pill :tag="tag" size="sm" />
+            {% endfor %}
+        </div>
+    </footer>
+</article>
+{% endfor %}
+
+{# Next page sentinel #}
+{% if page.has_next %}
+<div hx-get="{% url 'essays:feed' %}?page={{ page.next_page_number }}"
+     hx-trigger="revealed"
+     hx-swap="afterend">
+    {# Visible loading indicator while fetching #}
+    <div class="flex justify-center py-8">
+        <c-loading-spinner size="lg" />
+    </div>
+</div>
+{% else %}
+{# End of feed #}
+<div class="text-center py-8 text-gray-400 text-sm">
+    You have reached the end.
+</div>
+{% endif %}
+
+
+{# ======================================================================
+   Partial 6: Empty state
+   ======================================================================
+
+   Used by: essay_search view (when query is empty)
+   A simple placeholder shown when there is nothing to display.
+   Uses a Cotton component for consistent empty states across the app.
+   ====================================================================== #}
+
+{# --- content/partials/search_empty.html --- #}
+<c-empty-state
+    icon="search"
+    title="Search essays"
+    description="Start typing to find essays by title.">
+</c-empty-state>
+
+{# --- Cotton component: cotton/empty_state.html --- #}
+{# <c-vars icon="" title="" description="" /> #}
+{# <div class="text-center py-12 text-gray-400"> #}
+{#     {% if icon == "search" %} #}
+{#     <svg class="w-12 h-12 mx-auto mb-3" ...>...</svg> #}
+{#     {% elif icon == "document" %} #}
+{#     <svg class="w-12 h-12 mx-auto mb-3" ...>...</svg> #}
+{#     {% endif %} #}
+{#     <h3 class="text-lg font-medium text-gray-500">{{ title }}</h3> #}
+{#     {% if description %} #}
+{#     <p class="text-sm mt-1">{{ description }}</p> #}
+{#     {% endif %} #}
+{#     {{ slot }} #}
+{# </div> #}
+
+
+{# ======================================================================
+   Partial 7: Using django-template-partials inline partials
+   ======================================================================
+
+   django-template-partials lets you define named sections within a
+   template using {% partialdef name %}...{% endpartialdef %}. The view
+   can then render just that section by appending #name to the template
+   path: render(request, "template.html#section-name", context).
+
+   The "inline" keyword on partialdef means the partial is also
+   rendered in place when the full template loads. Without "inline",
+   the partial is only rendered when explicitly requested.
+
+   This avoids maintaining separate partial files for content that
+   is tightly coupled to the full page template.
+   ====================================================================== #}
+
+{# --- content/essay_list.html (full template with inline partials) --- #}
+{% extends "base.html" %}
+{% load partials %}
+
+{% block content %}
+<section>
+    <div class="flex items-center justify-between mb-6">
+        <h1>Essays</h1>
+        <button hx-get="{% url 'htmx:essay_quick_create_form' %}"
+                hx-target="#quick-create"
+                class="btn btn-primary">
+            New Essay
+        </button>
+    </div>
+
+    <div id="quick-create"></div>
+
+    {# This partial can be rendered independently via:
+       render(request, "content/essay_list.html#essay-list", context)
+       The "inline" keyword means it also renders in the full page. #}
+    {% partialdef essay-list inline %}
+    <table class="w-full">
+        <thead>
+            <tr>
+                <th class="text-left">Title</th>
+                <th class="text-left">Stage</th>
+                <th class="text-left">Author</th>
+                <th class="text-left">Words</th>
+                <th class="text-left">Updated</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody id="essay-list-body">
+            {% for essay in page %}
+                {% include "content/partials/essay_row.html" %}
+            {% empty %}
+                <tr>
+                    <td colspan="6">
+                        <c-empty-state
+                            icon="document"
+                            title="No essays yet"
+                            description="Create your first essay to get started." />
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {# Pagination controls that also use HTMX #}
+    {% if page.has_other_pages %}
+    <nav class="flex justify-center gap-2 mt-6" aria-label="Pagination">
+        {% if page.has_previous %}
+        <a href="?page={{ page.previous_page_number }}"
+           hx-get="{% url 'essays:list' %}?page={{ page.previous_page_number }}"
+           hx-target="#essay-list-body"
+           hx-swap="outerHTML"
+           hx-push-url="true"
+           class="btn btn-sm">
+            Previous
+        </a>
+        {% endif %}
+
+        <span class="px-3 py-1 text-sm text-gray-500">
+            Page {{ page.number }} of {{ page.paginator.num_pages }}
+        </span>
+
+        {% if page.has_next %}
+        <a href="?page={{ page.next_page_number }}"
+           hx-get="{% url 'essays:list' %}?page={{ page.next_page_number }}"
+           hx-target="#essay-list-body"
+           hx-swap="outerHTML"
+           hx-push-url="true"
+           class="btn btn-sm">
+            Next
+        </a>
+        {% endif %}
+    </nav>
+    {% endif %}
+    {% endpartialdef %}
+</section>
+{% endblock %}
+
+
+{# ======================================================================
+   Partial 8: Export progress (polling target)
+   ======================================================================
+
+   Used by: essay_export_status view
+   Rendered while an async export task is in progress. The parent
+   element uses hx-trigger="every 2s" to poll the status endpoint.
+   When the task completes, the server returns a different partial
+   (export_complete.html) with HttpResponseStopPolling to end polling.
+   ====================================================================== #}
+
+{# --- content/partials/export_progress.html --- #}
+<div id="export-status"
+     hx-get="{% url 'essays:export_status' task_id=task_id %}"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML"
+     class="p-4 border rounded bg-blue-50">
+    <div class="flex items-center gap-3">
+        <c-loading-spinner size="sm" />
+        <div>
+            <p class="font-medium">Exporting essays...</p>
+            <div class="w-64 bg-gray-200 rounded-full h-2 mt-2">
+                <div class="bg-blue-600 h-2 rounded-full transition-all"
+                     style="width: {{ progress }}%"></div>
+            </div>
+            <p class="text-sm text-gray-500 mt-1">{{ progress }}% complete</p>
+        </div>
+    </div>
+</div>
+
+{# --- content/partials/export_complete.html --- #}
+<div id="export-status" class="p-4 border rounded bg-green-50">
+    <div class="flex items-center gap-3">
+        <svg class="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M5 13l4 4L19 7" />
+        </svg>
+        <div>
+            <p class="font-medium text-green-800">Export complete</p>
+            <a href="{{ download_url }}"
+               hx-boost="false"
+               class="text-sm text-green-600 underline mt-1 inline-block">
+                Download file
+            </a>
+        </div>
+    </div>
+</div>
+
+{# --- content/partials/export_failed.html --- #}
+<div id="export-status" class="p-4 border rounded bg-red-50">
+    <div class="flex items-center gap-3">
+        <svg class="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24"
+             stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12" />
+        </svg>
+        <div>
+            <p class="font-medium text-red-800">Export failed</p>
+            <p class="text-sm text-red-600 mt-1">{{ error }}</p>
+        </div>
+    </div>
+</div>
+
+
+{# ======================================================================
+   Partial 9: Quick create form
+   ======================================================================
+
+   Used by: essay_quick_create view
+   Loaded into the #quick-create container on the essay list page.
+   On success, the server uses retarget() and reswap() to prepend the
+   new essay row to #essay-list-body instead of replacing the form.
+   ====================================================================== #}
+
+{# --- content/partials/quick_create_form.html --- #}
+<div id="quick-create" class="border rounded p-4 mb-6 bg-gray-50">
+    <form hx-post="{% url 'essays:quick_create' %}"
+          hx-target="this"
+          hx-swap="outerHTML">
+        {% csrf_token %}
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <c-form-field label="Title" :errors="form.title.errors">
+                <input type="text"
+                       name="title"
+                       value="{{ form.title.value|default:'' }}"
+                       placeholder="Essay title"
+                       class="input w-full"
+                       required
+                       autofocus>
+            </c-form-field>
+
+            <c-form-field label="Type" :errors="form.content_type.errors">
+                <select name="content_type" class="input w-full">
+                    {% for value, label in form.content_type.field.choices %}
+                    <option value="{{ value }}"
+                            {% if form.content_type.value == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </c-form-field>
+        </div>
+
+        <c-form-field label="Body" :errors="form.body.errors" class="mt-4">
+            <textarea name="body"
+                      rows="4"
+                      class="input w-full"
+                      placeholder="Start writing..."
+                      required>{{ form.body.value|default:'' }}</textarea>
+        </c-form-field>
+
+        <div class="flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary">Create Draft</button>
+            {# Clear the form container #}
+            <button type="button"
+                    hx-get="{% url 'htmx:empty' %}"
+                    hx-target="#quick-create"
+                    hx-swap="outerHTML"
+                    class="btn">
+                Cancel
+            </button>
+        </div>
+    </form>
+</div>

@@ -1,0 +1,427 @@
+{% comment %}
+Observable Plot + Django Integration
+=====================================
+
+Observable Plot is a higher-level charting library built on D3 that
+removes the boilerplate of scales, axes, and layouts. It is ideal
+when you want a chart quickly without the full D3 ceremony.
+
+Key advantages over raw D3:
+    - Declarative API: describe what to plot, not how to draw it
+    - Automatic scales, axes, and legends
+    - Built-in faceting for small multiples
+    - Much less code for standard chart types
+
+Trade-offs:
+    - Less control over animation and interaction
+    - Harder to customize beyond Plot's design vocabulary
+    - Adds another dependency (though it depends on D3 internally)
+
+This template demonstrates Plot equivalents for the same data
+shapes served by the Django endpoints in api_views.py.
+
+Verify Plot API against:
+    refs/plot-main/src/marks/bar.js     (barX, barY)
+    refs/plot-main/src/marks/line.js    (line)
+    refs/plot-main/src/marks/dot.js     (dot)
+    refs/plot-main/src/plot.js          (Plot.plot)
+    refs/plot-main/src/facet.js         (faceting)
+{% endcomment %}
+
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Publishing Analytics (Observable Plot){% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-8">
+
+    <h1 class="text-3xl font-bold mb-2">Publishing Analytics</h1>
+    <p class="text-gray-500 mb-8">
+        Built with Observable Plot for simpler chart creation.
+    </p>
+
+    {# ---------------------------------------------------------------
+       Embed data with json_script (same pattern as template_d3.html)
+    --------------------------------------------------------------- #}
+
+    {{ essays_per_month|json_script:"essays-per-month-data" }}
+    {{ essays_by_category|json_script:"essays-by-category-data" }}
+    {{ publication_timeline|json_script:"timeline-data" }}
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+        {# ---------------------------------------------------------------
+           PATTERN 1: Simple bar chart with Plot.barY
+
+           Plot.barY creates vertical bars. The first argument is the
+           data array. The second is an options object with x, y, and
+           styling channels.
+
+           Compare this to the ~80 lines needed for the D3 bar chart
+           in charts.js. Plot handles margins, scales, axes, and
+           formatting automatically.
+        --------------------------------------------------------------- #}
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-semibold mb-4">Essays Per Month</h2>
+            <div id="plot-bar"></div>
+        </div>
+
+        {# ---------------------------------------------------------------
+           PATTERN 2: Line chart with confidence area
+
+           Plot.line and Plot.areaY can be combined in a single plot
+           call using the marks array. Each mark is a layer.
+        --------------------------------------------------------------- #}
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-semibold mb-4">Publication Trend</h2>
+            <div id="plot-line"></div>
+        </div>
+
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+
+        {# ---------------------------------------------------------------
+           PATTERN 3: Dot plot with color encoding
+
+           Plot.dot maps data to circles. Color, size, and shape
+           channels encode different dimensions. The tip mark adds
+           built-in tooltips (Plot 0.6+).
+        --------------------------------------------------------------- #}
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-semibold mb-4">Publication Events</h2>
+            <div id="plot-dots"></div>
+        </div>
+
+        {# ---------------------------------------------------------------
+           PATTERN 4: Faceted chart (small multiples)
+
+           Faceting splits data into subsets and draws a separate panel
+           for each. This is one of Plot's strongest features and has
+           no simple equivalent in raw D3.
+        --------------------------------------------------------------- #}
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-semibold mb-4">Monthly Output by Content Type</h2>
+            <div id="plot-faceted"></div>
+        </div>
+
+    </div>
+
+    {# ---------------------------------------------------------------
+       PATTERN 5: Horizontal bar chart (Plot.barX)
+
+       barX is useful for category labels that are long strings.
+       The categories go on the y-axis where there is more room.
+    --------------------------------------------------------------- #}
+
+    <div class="mt-8 bg-white rounded-lg shadow p-6">
+        <h2 class="text-lg font-semibold mb-4">Top Tags</h2>
+        <div id="plot-bar-horizontal"></div>
+    </div>
+
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+
+{# Load Observable Plot from CDN. Plot includes D3 as a dependency. #}
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6/dist/plot.umd.min.js"></script>
+
+<script>
+    /**
+     * Helper: read json_script data (same as template_d3.html)
+     */
+    function readJsonScript(elementId) {
+        const el = document.getElementById(elementId);
+        if (!el) return null;
+        return JSON.parse(el.textContent);
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const barData = readJsonScript("essays-per-month-data") || [];
+        const treeData = readJsonScript("essays-by-category-data") || {};
+        const timelineData = readJsonScript("timeline-data") || [];
+
+        // Parse dates
+        const barParsed = barData.map(d => ({
+            month: new Date(d.month),
+            count: d.count,
+        }));
+
+        const timelineParsed = timelineData.map(d => ({
+            ...d,
+            date: new Date(d.date),
+        }));
+
+
+        // ---------------------------------------------------------------
+        // 1. Vertical bar chart with Plot.barY
+        //
+        // Plot.plot() returns a DOM element (SVG or HTML). Append it
+        // to your container.
+        // ---------------------------------------------------------------
+
+        const barChart = Plot.plot({
+            width: 540,
+            height: 300,
+            marginBottom: 50,
+            x: {
+                type: "band",
+                tickFormat: d3.timeFormat("%b '%y"),
+                label: null,
+                tickRotate: -45,
+            },
+            y: {
+                label: "Essays published",
+                grid: true,
+            },
+            marks: [
+                Plot.barY(barParsed, {
+                    x: "month",
+                    y: "count",
+                    fill: "#3b82f6",
+                    tip: true,  // Built-in tooltip (Plot 0.6+)
+                }),
+                // Add a rule at y=0 for a clean baseline
+                Plot.ruleY([0]),
+            ],
+        });
+        document.getElementById("plot-bar").append(barChart);
+
+
+        // ---------------------------------------------------------------
+        // 2. Line chart with area fill
+        //
+        // Multiple marks in the same plot share the same scales. Plot
+        // automatically infers the scale domains from all marks.
+        // ---------------------------------------------------------------
+
+        const lineChart = Plot.plot({
+            width: 540,
+            height: 300,
+            x: {
+                type: "time",
+                label: null,
+            },
+            y: {
+                label: "Essays published",
+                grid: true,
+            },
+            marks: [
+                // Area fill under the line
+                Plot.areaY(barParsed, {
+                    x: "month",
+                    y: "count",
+                    fill: "#3b82f6",
+                    fillOpacity: 0.1,
+                    curve: "monotone-x",
+                }),
+                // The line itself
+                Plot.line(barParsed, {
+                    x: "month",
+                    y: "count",
+                    stroke: "#3b82f6",
+                    strokeWidth: 2,
+                    curve: "monotone-x",
+                }),
+                // Data points
+                Plot.dot(barParsed, {
+                    x: "month",
+                    y: "count",
+                    fill: "#3b82f6",
+                    r: 3,
+                    tip: true,
+                }),
+                Plot.ruleY([0]),
+            ],
+        });
+        document.getElementById("plot-line").append(lineChart);
+
+
+        // ---------------------------------------------------------------
+        // 3. Dot plot: publication events
+        //
+        // Each publication is a dot. Color encodes type (essay vs
+        // field note). Size encodes word count.
+        //
+        // Plot.tip mark shows tooltips with formatted content. The
+        // channels option controls what appears in the tooltip.
+        // ---------------------------------------------------------------
+
+        const dotChart = Plot.plot({
+            width: 540,
+            height: 300,
+            x: {
+                type: "time",
+                label: "Publication date",
+            },
+            y: {
+                label: "Word count",
+                grid: true,
+            },
+            color: {
+                domain: ["essay", "field_note"],
+                range: ["#3b82f6", "#f59e0b"],
+                legend: true,
+            },
+            marks: [
+                Plot.dot(timelineParsed, {
+                    x: "date",
+                    y: d => d.word_count || 0,
+                    fill: "type",
+                    r: d => d.type === "essay" ? 4 : 3,
+                    fillOpacity: 0.7,
+                    tip: true,
+                    title: d => [
+                        d.title,
+                        d.type.replace("_", " "),
+                        d.word_count ? `${d.word_count.toLocaleString()} words` : "",
+                        d.tags ? d.tags.join(", ") : "",
+                    ].filter(Boolean).join("\n"),
+                }),
+                Plot.ruleY([0]),
+            ],
+        });
+        document.getElementById("plot-dots").append(dotChart);
+
+
+        // ---------------------------------------------------------------
+        // 4. Faceted bar chart (small multiples)
+        //
+        // The fy (facet y) channel splits data into panels by content
+        // type. Each panel shows monthly counts for that type only.
+        //
+        // This is extremely difficult to build in raw D3 but takes
+        // one extra option in Plot.
+        // ---------------------------------------------------------------
+
+        // Prepare data: we need month + content_type + count.
+        // For the faceted chart, use the timeline data grouped by month
+        // and content type.
+        const facetData = [];
+        const monthlyByType = {};
+
+        for (const item of timelineParsed) {
+            if (item.type !== "essay") continue;
+            const monthKey = d3.timeFormat("%Y-%m")(item.date);
+            const ct = item.content_type || "essay";
+            const key = `${monthKey}|${ct}`;
+            if (!monthlyByType[key]) {
+                monthlyByType[key] = {
+                    month: d3.timeParse("%Y-%m")(monthKey),
+                    content_type: ct,
+                    count: 0,
+                };
+            }
+            monthlyByType[key].count += 1;
+        }
+        for (const entry of Object.values(monthlyByType)) {
+            facetData.push(entry);
+        }
+
+        if (facetData.length > 0) {
+            const facetedChart = Plot.plot({
+                width: 540,
+                height: 400,
+                marginBottom: 50,
+                x: {
+                    type: "band",
+                    tickFormat: d3.timeFormat("%b '%y"),
+                    label: null,
+                    tickRotate: -45,
+                },
+                y: {
+                    label: "Count",
+                    grid: true,
+                },
+                fy: {
+                    label: "Content type",
+                },
+                color: {
+                    domain: ["essay", "tutorial", "case_study", "opinion"],
+                    range: ["#3b82f6", "#10b981", "#8b5cf6", "#ef4444"],
+                },
+                marks: [
+                    Plot.barY(facetData, {
+                        x: "month",
+                        y: "count",
+                        fy: "content_type",
+                        fill: "content_type",
+                        tip: true,
+                    }),
+                    Plot.ruleY([0]),
+                ],
+            });
+            document.getElementById("plot-faceted").append(facetedChart);
+        }
+
+
+        // ---------------------------------------------------------------
+        // 5. Horizontal bar chart for top tags
+        //
+        // Extract tag counts from the hierarchy data and show them as
+        // horizontal bars. Plot.barX puts the quantitative scale on x
+        // and categories on y.
+        // ---------------------------------------------------------------
+
+        const tagCounts = [];
+        if (treeData.children) {
+            for (const category of treeData.children) {
+                if (!category.children) continue;
+                for (const tag of category.children) {
+                    // Merge duplicates across categories
+                    const existing = tagCounts.find(t => t.tag === tag.name);
+                    if (existing) {
+                        existing.count += tag.value;
+                    } else {
+                        tagCounts.push({
+                            tag: tag.name,
+                            count: tag.value,
+                            category: category.name,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Sort by count descending, take top 15
+        tagCounts.sort((a, b) => b.count - a.count);
+        const topTags = tagCounts.slice(0, 15);
+
+        if (topTags.length > 0) {
+            const horizontalChart = Plot.plot({
+                width: 800,
+                height: Math.max(200, topTags.length * 28),
+                marginLeft: 120,
+                x: {
+                    label: "Number of essays",
+                    grid: true,
+                },
+                y: {
+                    label: null,
+                    domain: topTags.map(d => d.tag),
+                },
+                marks: [
+                    Plot.barX(topTags, {
+                        x: "count",
+                        y: "tag",
+                        fill: "#3b82f6",
+                        tip: true,
+                        sort: { y: "-x" },
+                    }),
+                    Plot.ruleX([0]),
+                ],
+            });
+            document.getElementById("plot-bar-horizontal").append(horizontalChart);
+        }
+
+    });
+</script>
+{% endblock %}

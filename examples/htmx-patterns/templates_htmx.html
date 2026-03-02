@@ -1,0 +1,498 @@
+{# ======================================================================
+   HTMX Pattern: Templates
+   =======================
+
+   Demonstrates HTMX attributes in Django templates for a content
+   publishing site. Shows boosted navigation, search-as-you-type,
+   infinite scroll, inline editing, delete with confirmation, tab
+   navigation, modal dialogs, and toast notifications.
+
+   Uses Cotton component syntax (c-component tags) where appropriate.
+   Uses django-template-partials for inline partial definitions.
+
+   Domain: Publishing API with Essay, Tag, FieldNote models.
+   ====================================================================== #}
+
+
+{# ======================================================================
+   Pattern 1: Base template with hx-boost on body
+   ======================================================================
+
+   hx-boost="true" on the body element converts all anchor tags and
+   forms to HTMX requests automatically. Links become AJAX navigations
+   that swap the body content, preserving the page shell (head, scripts,
+   CSS). This gives SPA-like speed without changing any existing links.
+
+   Set hx-boost="false" on individual elements to opt them out (for
+   example, links to external sites or file downloads).
+   ====================================================================== #}
+
+{# --- base.html --- #}
+{% load django_htmx partials %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Publishing{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    {% django_htmx_script %}
+</head>
+<body hx-boost="true" hx-ext="response-targets">
+    <c-layouts.site-shell>
+        <c-slot name="nav">
+            {# Navigation links are automatically boosted #}
+            <nav>
+                <a href="{% url 'essays:list' %}">Essays</a>
+                <a href="{% url 'notes:list' %}">Field Notes</a>
+                <a href="{% url 'tags:list' %}">Tags</a>
+                {# Opt out of boost for external links #}
+                <a href="https://example.com" hx-boost="false">External</a>
+            </nav>
+        </c-slot>
+
+        <main id="main-content">
+            {% block content %}{% endblock %}
+        </main>
+
+        {# Toast container for HX-Trigger notifications (see Pattern 9) #}
+        <div id="toast-container"
+             class="fixed bottom-4 right-4 z-50 space-y-2"
+             aria-live="polite"></div>
+    </c-layouts.site-shell>
+
+    {# HTMX extensions #}
+    <script src="{% static 'js/htmx-ext/response-targets.js' %}"></script>
+
+    {# Listen for server-triggered toast events.
+       The server sends HX-Trigger: {"showToast": {"message": "...", "level": "..."}}
+       and HTMX dispatches this as a custom DOM event on the body.
+       We create a temporary element and use textContent (not HTML) for safety. #}
+    <script>
+        document.body.addEventListener("showToast", function(event) {
+            const detail = event.detail || {};
+            const message = detail.message || "";
+            const level = detail.level || "info";
+            const container = document.getElementById("toast-container");
+            const toast = document.createElement("div");
+            toast.className = "toast toast-" + level;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(function() { toast.remove(); }, 4000);
+        });
+    </script>
+</body>
+</html>
+
+
+{# ======================================================================
+   Pattern 2: Search input with debounce
+   ======================================================================
+
+   hx-trigger="keyup changed delay:300ms" ensures the request fires
+   only after 300ms of inactivity, preventing a request on every
+   keystroke. The "changed" modifier prevents firing if the value
+   has not actually changed (e.g., arrow keys).
+
+   hx-indicator points to a loading spinner that HTMX shows/hides
+   automatically by toggling the htmx-indicator class.
+   ====================================================================== #}
+
+{# --- content/essay_list.html (search section) --- #}
+{% block content %}
+<section>
+    <h1>Essays</h1>
+
+    <div class="relative">
+        <input type="search"
+               name="q"
+               placeholder="Search essays..."
+               hx-get="{% url 'essays:search' %}"
+               hx-trigger="keyup changed delay:300ms, search"
+               hx-target="#search-results"
+               hx-indicator="#search-spinner"
+               hx-push-url="true"
+               class="w-full px-4 py-2 border rounded"
+               autocomplete="off">
+
+        {# Loading spinner, hidden by default. HTMX adds the
+           htmx-request class to the indicator element during
+           the request lifecycle. #}
+        <c-loading-spinner id="search-spinner" class="htmx-indicator" />
+    </div>
+
+    <div id="search-results">
+        {# Results are swapped in here by HTMX #}
+        {% include "content/partials/essay_card_list.html" %}
+    </div>
+</section>
+{% endblock %}
+
+
+{# ======================================================================
+   Pattern 3: Infinite scroll
+   ======================================================================
+
+   The last element in each page of results includes hx-trigger="revealed".
+   When the user scrolls it into the viewport, HTMX fires a GET request
+   for the next page and appends the response after the current batch.
+
+   The sentinel element is part of each page response, so the scroll
+   chain continues automatically until there are no more pages.
+   ====================================================================== #}
+
+{# --- content/essay_feed.html --- #}
+{% block content %}
+<section>
+    <h1>Essay Feed</h1>
+
+    <div id="essay-feed" class="space-y-6">
+        {% for essay in page %}
+            <c-essay-card :essay="essay" />
+        {% endfor %}
+
+        {# Sentinel: triggers next page load when scrolled into view #}
+        {% if page.has_next %}
+        <div hx-get="{% url 'essays:feed' %}?page={{ page.next_page_number }}"
+             hx-trigger="revealed"
+             hx-swap="afterend"
+             hx-indicator="#feed-spinner">
+            <c-loading-spinner id="feed-spinner" class="htmx-indicator" />
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
+
+
+{# ======================================================================
+   Pattern 4: Inline editing
+   ======================================================================
+
+   Two-step flow:
+   1. Click "Edit" to load the form partial into the row (hx-get).
+   2. Submit the form to save and swap back to the display partial
+      (hx-post).
+
+   hx-target="closest tr" on the edit button means "replace the nearest
+   ancestor tr element." hx-swap="outerHTML" replaces the entire row,
+   not just its content.
+   ====================================================================== #}
+
+{# --- content/field_note_list.html (table body) --- #}
+<table>
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Stage</th>
+            <th>Updated</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody id="notes-list">
+        {% for note in notes %}
+        <tr id="note-{{ note.pk }}">
+            <td>{{ note.title }}</td>
+            <td>{{ note.get_stage_display }}</td>
+            <td>{{ note.updated_at|timesince }} ago</td>
+            <td>
+                {# Load edit form into this row #}
+                <button hx-get="{% url 'notes:edit' note.pk %}"
+                        hx-target="closest tr"
+                        hx-swap="outerHTML"
+                        class="btn btn-sm">
+                    Edit
+                </button>
+
+                {# Delete with confirmation (Pattern 5) #}
+                <button hx-delete="{% url 'notes:delete' note.pk %}"
+                        hx-confirm="Delete this note? This cannot be undone."
+                        hx-target="closest tr"
+                        hx-swap="outerHTML swap:500ms"
+                        class="btn btn-sm btn-danger">
+                    Delete
+                </button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+
+{# ======================================================================
+   Pattern 5: Delete with confirmation
+   ======================================================================
+
+   hx-delete sends a DELETE request. hx-confirm shows a native browser
+   confirm dialog before the request is sent. If the user cancels, no
+   request is made.
+
+   hx-swap="outerHTML swap:500ms" means:
+   - Replace the target element (the table row) with the response.
+   - Wait 500ms before performing the swap, allowing a CSS transition
+     (like a fade-out) to play.
+
+   The server returns an empty response body, which effectively removes
+   the row from the DOM.
+
+   CSS for the fade-out:
+     tr.htmx-swapping { opacity: 0; transition: opacity 500ms; }
+   ====================================================================== #}
+
+{# See the delete button in Pattern 4 above. The CSS goes in your stylesheet: #}
+<style>
+    tr.htmx-swapping {
+        opacity: 0;
+        transition: opacity 500ms ease-out;
+    }
+</style>
+
+
+{# ======================================================================
+   Pattern 6: Active search with hx-indicator
+   ======================================================================
+
+   hx-indicator specifies an element whose visibility is controlled by
+   HTMX during the request lifecycle. HTMX adds the htmx-request class
+   when a request starts and removes it when the response arrives.
+
+   Your CSS should hide the indicator by default and show it when
+   htmx-request is present:
+
+     .htmx-indicator { display: none; }
+     .htmx-indicator.htmx-request { display: inline-block; }
+
+   Or use opacity for a smoother transition:
+     .htmx-indicator { opacity: 0; transition: opacity 200ms; }
+     .htmx-indicator.htmx-request { opacity: 1; }
+   ====================================================================== #}
+
+{# --- Cotton component: cotton/loading_spinner.html --- #}
+{# <c-vars size="md" /> #}
+{# <div {{ attrs }}> #}
+{#     <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24">...</svg> #}
+{# </div> #}
+
+{# Usage in any template: #}
+<c-loading-spinner id="my-spinner" class="htmx-indicator" size="sm" />
+
+
+{# ======================================================================
+   Pattern 7: Tab navigation with hx-push-url
+   ======================================================================
+
+   Each tab link uses hx-get to fetch the tab content and hx-push-url
+   to update the browser URL. This makes tabs bookmarkable and the
+   back button functional.
+
+   The hx-target points to the tab content area. hx-swap defaults to
+   the HTMX default of swapping the target's inner content.
+   ====================================================================== #}
+
+{# --- content/essay_detail.html (tabs section) --- #}
+<div class="border-b">
+    <nav class="flex gap-4" role="tablist">
+        <a href="{% url 'essays:detail' essay.slug %}"
+           hx-get="{% url 'essays:detail' essay.slug %}"
+           hx-target="#tab-content"
+           hx-push-url="true"
+           class="tab {% if active_tab == 'content' %}tab-active{% endif %}"
+           role="tab">
+            Content
+        </a>
+        <a href="{% url 'essays:detail_notes' essay.slug %}"
+           hx-get="{% url 'htmx:essay_notes' essay.slug %}"
+           hx-target="#tab-content"
+           hx-push-url="true"
+           class="tab {% if active_tab == 'notes' %}tab-active{% endif %}"
+           role="tab">
+            Field Notes ({{ essay.field_notes.count }})
+        </a>
+        <a href="{% url 'essays:detail_history' essay.slug %}"
+           hx-get="{% url 'htmx:essay_history' essay.slug %}"
+           hx-target="#tab-content"
+           hx-push-url="true"
+           class="tab {% if active_tab == 'history' %}tab-active{% endif %}"
+           role="tab">
+            History
+        </a>
+    </nav>
+</div>
+
+<div id="tab-content" role="tabpanel">
+    {% block tab_content %}{% endblock %}
+</div>
+
+
+{# ======================================================================
+   Pattern 8: Modal dialog loaded via HTMX
+   ======================================================================
+
+   Clicking the button loads the modal content from the server and
+   inserts it into a modal container. The modal markup includes its
+   own close button and backdrop.
+
+   hx-target="#modal-container" puts the response into a fixed
+   container. The server returns the full modal markup (backdrop,
+   dialog, form).
+   ====================================================================== #}
+
+{# Trigger button on any page #}
+<button hx-get="{% url 'htmx:tag_create_modal' %}"
+        hx-target="#modal-container"
+        class="btn">
+    New Tag
+</button>
+
+{# Modal container (in base.html, always present but empty) #}
+<div id="modal-container"></div>
+
+{# --- content/partials/tag_create_modal.html (server response) --- #}
+<div class="modal-backdrop"
+     x-data
+     @click.self="$el.parentElement.replaceChildren()">
+    <div class="modal">
+        <header class="modal-header">
+            <h2>Create Tag</h2>
+            <button @click="document.getElementById('modal-container').replaceChildren()"
+                    class="btn-close"
+                    aria-label="Close">&times;</button>
+        </header>
+        <form hx-post="{% url 'tags:create' %}"
+              hx-target="#modal-container">
+            {% csrf_token %}
+            <div class="modal-body">
+                <label for="tag-name">Tag name</label>
+                <input type="text" id="tag-name" name="name"
+                       required autofocus class="input">
+                {% if error %}
+                <p class="text-red-600 text-sm mt-1">{{ error }}</p>
+                {% endif %}
+            </div>
+            <footer class="modal-footer">
+                <button type="button"
+                        @click="document.getElementById('modal-container').replaceChildren()"
+                        class="btn btn-secondary">
+                    Cancel
+                </button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </footer>
+        </form>
+    </div>
+</div>
+
+
+{# ======================================================================
+   Pattern 9: Toast notifications via HX-Trigger events
+   ======================================================================
+
+   The server sets HX-Trigger: {"showToast": {"message": "...", "level": "..."}}
+   on the response. HTMX dispatches this as a DOM event on the body.
+
+   The JavaScript listener in the base template (see Pattern 1) catches
+   the event and creates a toast element in #toast-container.
+
+   This pattern keeps the notification logic entirely in the base
+   template. Individual views just call trigger_client_event() and
+   do not need any toast markup.
+
+   Multiple events can be triggered in a single response by calling
+   trigger_client_event() multiple times.
+   ====================================================================== #}
+
+{# --- Cotton component: cotton/toast.html --- #}
+{# This is optional. You can also handle toasts purely in JS (see base.html). #}
+{# <c-vars message="" level="info" /> #}
+{# <div class="toast toast-{{ level }}" #}
+{#      x-data="{ show: true }" #}
+{#      x-show="show" #}
+{#      x-init="setTimeout(() => show = false, 4000)" #}
+{#      x-transition> #}
+{#     {{ message }} #}
+{# </div> #}
+
+
+{# ======================================================================
+   Pattern 10: Form with hx-post and error handling
+   ======================================================================
+
+   Standard form submission via HTMX. On success the server returns
+   the updated display. On validation error the server returns the
+   form with errors, which HTMX swaps into the same target.
+
+   hx-target="closest tr" combined with hx-swap="outerHTML" means the
+   entire table row gets replaced. The server must return either a new
+   form (with errors) or the success content using the same outer
+   element structure.
+   ====================================================================== #}
+
+{# --- content/partials/field_note_form.html --- #}
+<tr id="note-{{ note.pk }}">
+    <td colspan="4">
+        <form hx-post="{% url 'notes:edit' note.pk %}"
+              hx-target="closest tr"
+              hx-swap="outerHTML">
+            {% csrf_token %}
+
+            <c-form-field label="Title" :errors="form.title.errors">
+                <input type="text" name="title"
+                       value="{{ form.title.value|default:'' }}"
+                       class="input" required>
+            </c-form-field>
+
+            <c-form-field label="Body" :errors="form.body.errors">
+                <textarea name="body" rows="4"
+                          class="input">{{ form.body.value|default:'' }}</textarea>
+            </c-form-field>
+
+            <div class="flex gap-2 mt-2">
+                <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                {# Cancel: reload the display row #}
+                <button type="button"
+                        hx-get="{% url 'notes:row' note.pk %}"
+                        hx-target="closest tr"
+                        hx-swap="outerHTML"
+                        class="btn btn-sm">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </td>
+</tr>
+
+
+{# ======================================================================
+   Pattern 11: Bulk actions with hx-include
+   ======================================================================
+
+   hx-include lets you send values from elements outside the
+   triggering form. Here, checkboxes in the table rows are included
+   in the bulk action request.
+   ====================================================================== #}
+
+<div class="flex gap-2 mb-4">
+    <select name="action" id="bulk-action">
+        <option value="">Bulk actions...</option>
+        <option value="publish">Publish selected</option>
+        <option value="archive">Archive selected</option>
+    </select>
+    <button hx-post="{% url 'essays:bulk_action' %}"
+            hx-include="[name='selected'], #bulk-action"
+            hx-target="#essay-list"
+            hx-confirm="Apply this action to all selected essays?"
+            class="btn btn-sm">
+        Apply
+    </button>
+</div>
+
+<table>
+    <tbody id="essay-list">
+        {% for essay in essays %}
+        <tr>
+            <td><input type="checkbox" name="selected" value="{{ essay.pk }}"></td>
+            <td>{{ essay.title }}</td>
+            <td>{{ essay.get_stage_display }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
