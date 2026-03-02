@@ -1,0 +1,182 @@
+<c-layouts.with-sidebar>
+
+    <div class="max-w-5xl mx-auto px-0">
+        <div class="text-center mx-auto max-w-4xl leading-normal mb-6">
+            <h1 class="text-4xl md:text-5xl mb-15 dark:text-gray-200 font-medium mb-3 inline-flex flex-wrap items-center justify-center space-x-2 md:space-x-3 space-y-3">
+                <span class="w-full md:w-auto">Goodbye</span>
+                <c-tag class="text-xl sm:text-2xl md:text-4xl">
+                    {% verbatim %}{% extends %}{% endverbatim %}
+                </c-tag>
+                <c-tag class="text-xl sm:text-2xl md:text-4xl">
+                    {% verbatim %}{% block %}{% endverbatim %}
+                </c-tag>
+
+                <c-tag class="text-xl sm:text-2xl md:text-4xl">
+                    {% verbatim %}{% include %}{% endverbatim %}
+                </c-tag>
+                <c-tag class="text-xl sm:text-2xl md:text-4xl">
+                    {% verbatim %}{% custom_tag %}{% endverbatim %}
+                </c-tag>
+                <div class="w-full shrink-0"></div>
+                <span class="pt-0 md:pt-5 clear-both flex-wrap inline-flex justify-center items-center space-x-2">
+                    <span class="">Hello</span>
+                    <span class="shrink-0 px-3 py-1 bg-teal-500/10 border-[3px] border-teal-600 font-mono text-xl sm:text-2xl md:text-4xl rounded-3xl text-teal-600 dark:text-white inline-block font-normal leading-normal">{{ '<c-cotton>'|force_escape }}</span>
+                </span>
+            </h1>
+
+            <!-- A Faster, More Expressive Approach to Templating in Django-->
+            <h2 class="!text-xl sm:!text-2xl italic !font-normal mt-3 md:mt-8 mb-10 pt-0 dark:!text-teal-300 text-yellow-900 text-opacity-50 brightness-75 dark:opacity-100">
+                Bringing component-based design to django templates
+            </h2>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4">
+            <div class="col-span-1 flex flex-col overflow-x-auto">
+                <h2 class="!font-normal !text-lg mb-3 mt-0 text-center"><span class="font-semibold">Before:</span> Strongly Coupled, Verbose</h2>
+                <div class="flex h-full rounded-xl overflow-hidden">
+                    <c-demo.snippet-tabs labels="view.html|product_layout.html" tabs_id="compare">
+                        <div class="flex flex-col h-full" x-show="active === 0">
+
+<c-snippet rounded="rounded-b-xl">{% cotton:verbatim %}{% verbatim %}
+{% extends "product_layout.html" %}
+
+{% block img_url %}
+icon.png
+{% endblock %}
+
+{% block title %}
+Item Title
+{% endblock %}
+
+{% block content %}
+    Description of the product
+
+    {% block price %}
+    $10
+    {% endblock %}
+{% endblock %}
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+                        </div>
+                        <div class="flex flex-col h-full" x-show="active === 1">
+
+<c-snippet rounded="rounded-b-xl">{% cotton:verbatim %}{% verbatim %}
+<div id="container">
+    <div id="header">
+        <img src="{% block img_url %}{% endblock %}" />
+        <h1>
+            {% block title %}
+            {% endblock %}
+        </h1>
+    </div>
+
+    <div id="content">
+        {% block content %}
+
+            <div id="price">
+                {% block price %}
+                {% endblock %}
+            </div>
+
+        {% endblock %}
+    </div>
+</div>
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+                        </div>
+                    </c-demo.snippet-tabs>
+                </div>
+            </div>
+            <div class="col-span-1 rounded-lg overflow-hidden  flex flex-col">
+                <h2 class="!font-normal !text-lg mb-3 mt-0 text-center"><span class="font-semibold">After:</span> Decoupled, Clean &amp; Re-usable</h2>
+                <div class="flex h-full rounded-xl overflow-hidden">
+                    <c-demo.snippet-tabs labels="view.html|product.html" tabs_id="compare">
+                        <div class="flex flex-col h-full" x-show="active === 0">
+
+<c-snippet rounded="rounded-b-xl">{% cotton:verbatim %}{% verbatim %}
+
+<c-product img_url="icon.png"
+    title="Item Title"
+    price="$10">
+    Description of the product
+</c-product>{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+                        </div>
+
+                        <div class="flex flex-col h-full" x-show="active === 1">
+
+<c-snippet rounded="rounded-b-xl">{% cotton:verbatim %}{% verbatim %}
+<div id="container">
+    <div id="header">
+        <img src="{{ img_url }}" />
+        <h1>{{ title }}</h1>
+    </div>
+
+    <div id="content">
+        {{ slot }}
+
+        {% if price %}
+            <div id="price">
+                {{ price }}
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+                        </div>
+                    </c-demo.snippet-tabs>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <h3 class="text-center pb-10">Why cotton?</h3>
+
+            <c-feature-tiles>
+                <c-feature-tile :disabled="1" title="Rapid UI composition">
+                    <c-slot name="icon">
+                        {% heroicon_outline 'fire' class="shrink-0 text-teal-600 size-16 mr-5 mt-1" stroke_width="1.8" %}
+                    </c-slot>
+                    Efficiently compose and reuse UI components. Adopting a modular design system streamlines workflow and boosts productivity.
+                </c-feature-tile>
+                <c-feature-tile title="Harmonious with Tailwind CSS">
+                    <c-slot name="icon">
+                        <c-icons.tailwind class="shrink-0 text-teal-600 size-14 mr-5 mt-1" />
+                    </c-slot>
+                    Tailwind's utility-first approach compliments component based design - isolating style in re-usable components, enhancing maintainability.
+                </c-feature-tile>
+                <c-feature-tile title="Interoperable with Django Templates">
+                    <c-slot name="icon">
+                        <div class="shrink-0 text-teal-600 text-[45px] font-medium mr-5 -mt-[1rem]">&#123;&#37;</div>
+                    </c-slot>
+                    Cotton enhances Django templates without replacing them, allowing progressive enhancement while maintaining full use of existing template features.
+                </c-feature-tile>
+                <c-feature-tile title="Enhanced Productivity">
+                    <c-slot name="icon">
+                        {% heroicon_outline 'code-bracket' class="shrink-0 text-teal-600 size-16 mr-5 mt-1" stroke_width="1.8" %}
+                    </c-slot>
+                    Cotton's HTML tag-like syntax allows code editors to recognize its components as HTML elements, enabling features like syntax highlighting and automatic tag completion.
+                </c-feature-tile>
+                <c-feature-tile title="Minimal Overhead">
+                    <c-slot name="icon">
+                        {% heroicon_outline 'presentation-chart-line' class="shrink-0 text-teal-600 size-16 mr-5 mt-1" stroke_width="1.8" %}
+                    </c-slot>
+                    Cotton compiles to native django components and the compilation step is automatically cached and dynamically managed.
+                </c-feature-tile>
+            </c-feature-tiles>
+        </div>
+
+        <div class="w-1/2 mt-5 ml-auto justify-end px-0 py-2 border border-yellow-800 dark:border-gray-700 border-opacity-20 rounded no-underline text-right flex items-center">
+            <span>
+                <span class="uppercase text-xs tracking-wider block text-gray-400">next</span>
+                <span class="text-white text-lg prose-a:text-gray-900 prose-a:dark:text-white prose-a:no-underline">
+                    <a href="{% url 'quickstart' %}">Quickstart</a>
+                </span>
+            </span>
+            <c-icons.chevron-right class="size-14 text-yellow-900 opacity-20 dark:text-teal-600 dark:opacity-100" />
+        </div>
+
+    </div>
+
+</c-layouts.with-sidebar>

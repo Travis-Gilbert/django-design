@@ -1,0 +1,428 @@
+<c-layouts.with-sidebar>
+    <h1 id="components">Components</h1>
+
+    <c-slot name="page_index">
+        <c-index-link><a href="#components" class="no-underline">Components</a></c-index-link>
+            <c-index-sublink><a href="#attributes" class="no-underline">Attributes</a></c-index-sublink>
+            <c-index-sublink><a href="#named-slots" class="no-underline">Named slots</a></c-index-sublink>
+            <c-index-sublink><a href="#dynamic-attributes" class="no-underline">Dynamic Attributes</a></c-index-sublink>
+            <c-index-sublink><a href="#attrs" class="no-underline">{% verbatim %}{{ attrs }}{% endverbatim %}</a></c-index-sublink>
+            <c-index-sublink><a href="#attrs-merging" class="no-underline">Merging with :attrs</a></c-index-sublink>
+            <c-index-sublink><a href="#vars" class="no-underline">Local state with {{ '<c-vars>'|force_escape }}</a></c-index-sublink>
+            <c-index-sublink><a href="#boolean-attributes" class="no-underline">Boolean Attributes</a></c-index-sublink>
+            <c-index-sublink><a href="#dynamic-components" class="no-underline">Dynamic Components</a></c-index-sublink>
+            <c-index-sublink><a href="#context-isolation" class="no-underline">Context Isolation</a></c-index-sublink>
+            <c-index-sublink><a href="#alpine-js-support" class="no-underline">Alpine.js Support</a></c-index-sublink>
+            <c-index-sublink><a href="#summary" class="no-underline">Summary of concepts</a></c-index-sublink>
+    </c-slot>
+
+    <p>Components are reusable pieces of view template. They can contain native Django template syntax and can be used
+        inside standard Django templates.</p>
+
+    <h2>1. The basic building block: {% verbatim %}{{ slot }}{% endverbatim %}</h2>
+
+    <p>The <code>{% verbatim %}{{ slot }}{% endverbatim %}</code> variable captures all content passed between a component's opening and closing tags.</p>
+
+<c-snippet label="cotton/box.html">{% cotton:verbatim %}{% verbatim %}
+<div class="box">
+    {{ slot }}
+</div>
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+    <p>Used in a parent template:</p>
+
+<c-snippet label="my_view.html">{% cotton:verbatim %}{% verbatim %}
+<c-box>
+    <p>Some <strong>content</strong></p>
+</c-box>
+{% endverbatim %}{% endcotton:verbatim %}
+<c-slot name="preview">
+    <div class="border rounded shadow p-5">Some <strong>content</strong></div>
+</c-slot>
+</c-snippet>
+
+    <c-hr id="attributes" />
+
+    <h2>2. Adding Component Attributes</h2>
+
+    <p>We can further customize components with attribute, which allow you to pass specific data into the component as key-value pairs.</p>
+
+<c-snippet label="cotton/weather.html">{% cotton:verbatim %}{% verbatim %}
+<p>It's {{ temperature }}<sup>o</sup>{{ unit }} and the condition is {{ condition }}.</p>
+    {% endcotton:verbatim %}{% endverbatim %}
+</c-snippet>
+
+<c-snippet label="view.html">{% cotton:verbatim %}{% verbatim %}
+<c-weather temperature="23" unit="{{ unit }}" condition="windy"></c-weather>
+{% endcotton:verbatim %}{% endverbatim %}
+<c-slot name="preview">
+    It's 23<sup>o</sup>C and the condition is windy.
+</c-slot>
+</c-snippet>
+
+    <c-hr id="named-slots" />
+
+    <h2>3. Using Named Slots</h2>
+
+    <p>If we want to pass HTML instead of just a string (or another data type) into a component, we can pass them as <c-highlight>named slots</c-highlight> with the <code>{{ '<c-slot name="...">...</c-slot>'|force_escape }}</code> syntax.</p>
+
+    <p>So as with normal attributes, you reference the slot content like normal variables, as in:</p>
+
+<c-snippet label="cotton/weather_card.html">{% cotton:verbatim %}{% verbatim %}
+<div class="flex ...">
+    <h2>{{ day }}:</h2> {{ icon }} {{ label }}
+</div>
+{% endcotton:verbatim %}{% endverbatim %}
+</c-snippet>
+
+    <c-snippet label="view.html">{% cotton:verbatim %}{% verbatim %}
+<c-weather-card day="Tuesday">
+    <c-slot name="icon">
+        <img src="sunny-icon.png" alt="Sunny">
+    </c-slot>
+
+    <c-slot name="label">
+        <div class="yellow">Sunny</div>
+    </c-slot>
+</c-weather-card>
+{% endcotton:verbatim %}{% endverbatim %}
+<c-slot name="preview">
+    <div class="flex items-center justify-center space-x-5 rounded border p-5">
+        <h3 class="m-0 !text-gray-800">Tuesday:</h3>
+        <svg id="Capa_1" enable-background="new 0 0 512 512" viewBox="0 0 512 512" class="w-20 h-20" xmlns="http://www.w3.org/2000/svg"><g><g><g fill="#fed402"><circle cx="176.39" cy="63.836" r="16"/><circle cx="335.61" cy="448.228" r="16"/></g></g><g><g fill="#fed402"><circle cx="63.804" cy="176.422" r="16"/><circle cx="448.196" cy="335.642" r="16"/></g></g><g><g fill="#fed402"><circle cx="63.804" cy="335.642" r="16"/><circle cx="448.196" cy="176.422" r="16"/></g></g><g><g fill="#fed402"><circle cx="176.39" cy="448.228" r="16"/><circle cx="335.61" cy="63.836" r="16"/></g></g><circle cx="256" cy="256.001" fill="#fed402" r="160.001"/><path d="m147.509 256.001c0-79.597 58.133-145.619 134.252-157.938-8.385-1.357-16.992-2.063-25.761-2.063-88.366 0-160.001 71.635-160.001 160.001s71.635 160 160.001 160c8.769 0 17.37-.705 25.755-2.062-76.119-12.319-134.246-78.341-134.246-157.938z" fill="#fac600"/><g><g fill="#fed402"><path d="m255.531 0h.938c8.578 0 15.531 6.954 15.531 15.531v32.938c0 8.578-6.953 15.531-15.531 15.531h-.938c-8.578 0-15.531-6.953-15.531-15.531v-32.938c0-8.577 6.953-15.531 15.531-15.531z"/><path d="m255.531 448h.938c8.578 0 15.531 6.954 15.531 15.531v32.938c0 8.578-6.954 15.531-15.531 15.531h-.938c-8.578 0-15.531-6.954-15.531-15.531v-32.938c0-8.578 6.953-15.531 15.531-15.531z"/></g></g><g><g fill="#fed402"><path d="m74.649 75.312.663-.663c6.065-6.065 15.899-6.065 21.964 0l23.291 23.291c6.065 6.065 6.065 15.899 0 21.964l-.663.663c-6.065 6.065-15.899 6.065-21.964 0l-23.291-23.29c-6.065-6.066-6.065-15.899 0-21.965z"/><path d="m391.433 392.096.663-.663c6.065-6.065 15.899-6.065 21.964 0l23.291 23.291c6.065 6.065 6.065 15.899 0 21.964l-.663.663c-6.065 6.065-15.899 6.065-21.964 0l-23.291-23.291c-6.065-6.065-6.065-15.899 0-21.964z"/></g></g><g><g fill="#fed402"><path d="m0 256.469v-.938c0-8.578 6.954-15.531 15.531-15.531h32.938c8.578 0 15.531 6.953 15.531 15.531v.938c0 8.578-6.953 15.531-15.531 15.531h-32.938c-8.577 0-15.531-6.953-15.531-15.531z"/><path d="m448 256.469v-.938c0-8.578 6.954-15.531 15.531-15.531h32.938c8.578 0 15.531 6.954 15.531 15.531v.938c0 8.578-6.954 15.531-15.531 15.531h-32.938c-8.578 0-15.531-6.953-15.531-15.531z"/></g></g><g><g fill="#fed402"><path d="m75.312 437.351-.663-.663c-6.065-6.065-6.065-15.899 0-21.964l23.291-23.291c6.065-6.065 15.899-6.065 21.964 0l.663.663c6.065 6.065 6.065 15.899 0 21.964l-23.291 23.291c-6.065 6.065-15.898 6.065-21.964 0z"/><path d="m392.096 120.567-.663-.663c-6.065-6.065-6.065-15.899 0-21.964l23.291-23.291c6.065-6.065 15.899-6.065 21.964 0l.663.663c6.065 6.065 6.065 15.899 0 21.964l-23.291 23.291c-6.065 6.065-15.899 6.065-21.964 0z"/></g></g></g></svg>
+        <h3 class="!text-yellow-500 m-0">Sunny</h3>
+    </div>
+</c-slot>
+</c-snippet>
+
+    <c-note>
+        Component filenames should be <c-highlight>snake_cased</c-highlight> by default. To use <c-highlight>kebab-cased</c-highlight> / hyphenated filenames instead, set <code>COTTON_SNAKE_CASED_NAMES</code> to <code>False</code> in your settings.py, <a href="{% url 'configuration' %}">more</a>.
+    </c-note>
+
+    <c-hr id="dynamic-attributes" />
+
+    <h2>4. Dynamic Attributes</h2>
+
+    <p>We saw how by default, all attributes that we pass to a component are treated as strings. If we want to pass HTML, we can use named slots. But what if we want to pass another data type like a template variable, boolean, integer, float, dictionary, list?</p>
+
+    <p>Cotton supports two syntaxes for dynamic values:</p>
+
+    <c-ul>
+        <li><strong>Quoteless values</strong>: <code>attr=value</code> - for simple values without spaces (like native Django)</li>
+        <li><strong>Colon prefix</strong>: <code>:attr="value"</code> - works for any expression</li>
+    </c-ul>
+
+<c-snippet label="Quoteless syntax">{% cotton:verbatim %}{% verbatim %}
+<!-- Simple literals and variables -->
+<c-button enabled=True />
+<c-button enabled=False />
+<c-input value=my_variable />
+<c-counter start=42 />
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+<c-snippet label="Colon prefix (for complex expressions)">{% cotton:verbatim %}{% verbatim %}
+<!-- Required for expressions with spaces/quotes -->
+<c-select :options="['yes', 'no', 'maybe']" />
+<c-card :config="{'open': True}" />
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+    <h3>Passing objects from context</h3>
+
+    <p>Sometimes you'll want to pass a variable from the parent's context 'as is' for the child component to perform what it wants.</p>
+
+    <c-snippet label="view.html">{% cotton:verbatim %}{% verbatim %}
+<!--
+context = { 'today': Weather.objects.get(...) }
+-->
+<c-weather :today="today"></c-weather>
+{% endcotton:verbatim %}{% endverbatim %}
+    </c-snippet>
+
+    <c-snippet label="cotton/weather.html">{% cotton:verbatim %}{% verbatim %}
+<p>It's {{ today.temperature }}<sup>o</sup>{{ today.unit }} and the condition is {{ today.condition }}.</p>
+    {% endcotton:verbatim %}{% endverbatim %}</c-snippet>
+
+    <h3>Passing python types</h3>
+
+<c-snippet label="Integers & Floats">{% cotton:verbatim %}{% verbatim %}
+<c-mycomp :prop="1" />
+<!-- {% prop == 1 %} -->
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+<c-snippet label="None">{% cotton:verbatim %}<c-mycomp :prop="None" />
+{% verbatim %}<!-- {% prop is None %} -->
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+<c-snippet label="Lists">{% cotton:verbatim %}<c-mycomp :items="['item1','item2','item3']" />
+{% verbatim %}<!-- {% for item in items %} -->
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+<c-snippet label="Dicts">{% cotton:verbatim %}<c-mycomp :mydict="{'name': 'Thom', 'products': [1,2]}" />
+{% verbatim %}<!-- {{ mydict.name }}, {{ mydict.products }} -->
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+<c-snippet label="Parent variable">{% cotton:verbatim %}<c-mycomp :product="product" />
+{% verbatim %}<!-- {{ product.title }} -->
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+<c-snippet label="With template expressions">{% cotton:verbatim %}{% verbatim %}
+<c-mycomp :slides="['{{ image1 }}', '{{ image2 }}']" />
+<!-- {% for images in slides %} -->
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+<c-snippet label="Generated with template expressions">{% cotton:verbatim %}{% verbatim %}
+<c-mycomp :is_highlighted="{% if important %}True{% endif %}" />
+<!-- {% is_valid is False %} -->
+{% endverbatim %}{% endcotton:verbatim %}</c-snippet>
+
+    <c-note>
+        <span class="font-semibold">Note:</span> You can use the same dynamic attribute patterns in <a href="#vars">c-vars</a> to apply dynamic defaults to your components.
+    </c-note>
+
+    <p>A quick example of this is a select component that you want to fill with options:</p>
+
+<c-snippet label="view.html">{% cotton:verbatim %}{% verbatim %}
+<c-select :options="['no', 'yes', 'maybe']" />
+{% endcotton:verbatim %}{% endverbatim %}
+<c-slot name="preview">
+    <div class="mb-2">Are carrots tasty?</div>
+    <select class="border border-gray-300 rounded px-3 py-2 shadow w-full">
+        <option value="no">no</option>
+        <option value="yes">yes</option>
+        <option value="maybe">maybe</option>
+    </select>
+</c-slot>
+</c-snippet>
+
+<c-snippet label="cotton/select.html">{% cotton:verbatim %}{% verbatim %}
+<select>
+    {% for option in options %}
+        <option value="{{ option }}">{{ option }}</option>
+    {% endfor %}
+</select>
+{% endcotton:verbatim %}{% endverbatim %}
+</c-snippet>
+
+    <c-hr id="attrs" />
+
+    <h2>5. Pass all attributes with {% verbatim %}{{ attrs }}{% endverbatim %}</h2>
+
+    <p>Sometimes it's useful to be able to reflect all attributes provided in the parent on to an HTML element in the component. This is particularly powerful when you are building <a href="{% url 'form-fields' %}">form inputs</a>.</p>
+
+<c-snippet label="form_view.html">{% cotton:verbatim %}{% verbatim %}
+<c-input name="first_name" placeholder="First name" />
+<c-input name="last_name" placeholder="Last name" value="Smith" readonly  />
+{% endcotton:verbatim %}{% endverbatim %}
+<c-slot name="preview">
+    <div class="mb-2"><input type="text" autocomplete="off" class="border px-2 py-1 shadow rounded" name="first_name" placeholder="First name" /></div>
+    <div><input type="text" autocomplete="off" class="border px-2 py-1 shadow rounded" name="last_name" placeholder="Last name" value="Smith" readonly /></div>
+</c-slot>
+</c-snippet>
+
+<c-snippet label="cotton/input.html">{% cotton:verbatim %}{% verbatim %}
+<input type="text" {{ attrs }} />
+
+<!-- html output
+<input type="text" name="first_name" placeholder="First name" />
+<input type="text" name="last_name" placeholder="Last name" value="Smith" readonly />
+-->
+
+
+{% endcotton:verbatim %}{% endverbatim %}
+</c-snippet>
+
+    <c-hr id="attrs-merging" />
+
+    <h2>5.1 Merging Attributes with :attrs</h2>
+
+    <p>In addition to using <code>{% verbatim %}{{ attrs }}{% endverbatim %}</code> to output attributes, you can also pass in a dictionary of attributes using the special <code>:attrs</code> dynamic attribute. This is useful when you have a collection of attributes from your view or another component that you want to apply.</p>
+
+    <c-snippet label="cotton/input.html">{% cotton:verbatim %}{% verbatim %}
+    <input type="text" {{ attrs }} />
+    {% endcotton:verbatim %}{% endverbatim %}
+    </c-snippet>
+
+    <c-snippet label="form_view.html">{% cotton:verbatim %}{% verbatim %}
+<!-- In your view -->
+context = {
+    'widget_attrs': {
+        'placeholder': 'Enter your name',
+        'data-validate': 'true',
+        'size': '40'
+    }
+}
+
+<!-- In your template -->
+<c-input :attrs="widget_attrs" required />
+
+<!-- html output
+<input type="text" placeholder="Enter your name" data-validate="true" size="40" required />
+-->
+{% endcotton:verbatim %}{% endverbatim %}
+    </c-snippet>
+
+    <c-note>
+        You can also proxy the whole attrs dictionary to other components. <code>{{ '<c-comp :attrs="attrs" />'|force_escape }}</code> This is useful when you want to pass all attributes from one component to another without having to specify each one individually. <a href="{% url 'usage-patterns' %}#attribute-proxying">More info</a>.
+    </c-note>
+
+    <c-hr id="vars" />
+
+    <h2>6. Defining Local Variables with <code>{{ '<c-vars />'|force_escape }}</code></h2>
+
+    <p>The <code>{{ '<c-vars />'|force_escape }}</code> tag simplifies component design by allowing local variable definition, reducing the need for repetitive attribute declarations and maintaining backend state.</p>
+
+    <p>Place a single <code>{{ '<c-vars />'|force_escape }}</code> at the top of a component to set key-value pairs that provide a default configuration.</p>
+
+    <h3>Example: Setting Default Attributes</h3>
+
+    <p>In components with common defaults, <code>{{ '<c-vars />'|force_escape }}</code> can pre-define attributes that rarely need overriding.</p>
+
+<c-snippet label="cotton/alert.html">{% cotton:verbatim %}{% verbatim %}
+<c-vars type="success" />
+
+<div class="{% if type == 'success' %} .. {% elif type == 'danger' %} .. {% endif %}">
+    {{ slot }}
+</div>
+{% endcotton:verbatim %}{% endverbatim %}
+</c-snippet>
+
+<c-snippet label="form_view.html">{% cotton:verbatim %}{% verbatim %}
+<c-alert>All good!</c-alert>
+<c-alert type="danger">Oh no!</c-alert>
+{% endcotton:verbatim %}{% endverbatim %}
+<c-slot name="preview">
+    <div class="bg-green-100 border-2 border-green-300 text-green-600 rounded-lg px-5 py-2 mb-2">All good!</div>
+    <div class="bg-red-100 border-2 border-red-200 text-red-600 rounded-lg px-5 py-2">Oh no!</div>
+</c-slot>
+</c-snippet>
+
+    <h3>{{ '<c-vars />'|force_escape }} are excluded from {% verbatim %}{{ attrs }}{% endverbatim %}</h3>
+
+    <p>Keys in <code>{{ '<c-vars />'|force_escape }}</code> are omitted from <code>{% verbatim %}{{ attrs }}{% endverbatim %}</code>, making them ideal for configuration attributes that shouldn't appear in HTML attributes.</p>
+
+<c-snippet label="cotton/input_group.html">{% cotton:verbatim %}{% verbatim %}
+<c-vars label errors />
+
+<label>{{ label }}</label>
+
+<input type="text" class="border ..." {{ attrs }} />
+
+{% if errors %}
+    {% for error in errors %}
+        {{ error }}
+    {% endfor %}
+{% endif %}
+{% endcotton:verbatim %}{% endverbatim %}
+</c-snippet>
+
+<c-snippet label="form_view.html">{% cotton:verbatim %}{% verbatim %}
+<c-input-group label="First name" placeholder="First name" :errors="errors.first_name" />
+<c-input-group label="Last name" placeholder="Last name" :errors="errors.last_name" />
+{% endcotton:verbatim %}{% endverbatim %}
+<c-slot name="preview">
+    <div class="mb-1">
+        <label>First name</label><br>
+        <input type="text" autocomplete="off" class="border px-2 py-1 rounded" name="first_name" placeholder="First name" />
+    </div>
+    <div>
+        <label>Last name</label><br>
+        <input type="text" autocomplete="off" class="border px-2 py-1 rounded" name="last_name" placeholder="Last name" /><br>
+        <div class="text-sm text-red-500">Last name is required</div>
+    </div>
+</c-slot>
+</c-snippet>
+
+    <p>By specifying <code>label</code> and <code>errors</code> keys in <code>{{ '<c-vars />'|force_escape }}</code>, these attributes won’t be included in <code>{% verbatim %}{{ attrs }}{% endverbatim %}</code>, allowing you to control attributes that are designed for component configuration and those intended as attributes.</p>
+
+    <c-hr id="boolean-attributes" />
+
+    <h2>7. Boolean attributes</h2>
+
+    <p>Sometimes you just want to pass a simple boolean to a component. Cotton supports providing the attribute name without a value which will provide a boolean True to the component.</p>
+
+<c-snippet label="cotton/input.html">{% cotton:verbatim %}{% verbatim %}
+<input type="text" {{ attrs }} />
+
+{% if required is True %}
+    <span class="text-red-500">*</span>
+{% endif %}
+{% endcotton:verbatim %}{% endverbatim %}
+</c-snippet>
+
+<c-snippet label="form_view.html">{% cotton:verbatim %}{% verbatim %}
+<c-input name="telephone" required />
+{% endcotton:verbatim %}{% endverbatim %}
+<c-slot name="preview">
+    <input type="text" autocomplete="off" class="border px-2 py-1 shadow rounded" name="telephone" placeholder="Telephone" /> <span class="text-red-500 text-2xl">*</span>
+</c-slot>
+</c-snippet>
+
+    <c-hr id="dynamic-components" />
+
+    <h2>8. Dynamic Components</h2>
+
+    <p>There can be times where components need to be included dynamically. For these cases we can reach for a special <code>{{ '<c-component>'|force_escape }}</code> tag with an <code>is</code> attribute:</p>
+
+<c-snippet label="cotton/icon_list.html">{% cotton:verbatim %}{% verbatim %}
+{% for icon in icons %}
+    <c-component is="icons.{{ icon }}" />
+{% endfor %}
+{% endcotton:verbatim %}{% endverbatim %}</c-snippet>
+
+    <p>The <code>is</code> attribute is similar to other attributes so we have a number of possibilities to define it:</p>
+
+<c-snippet label="cotton/icon_list.html">{% cotton:verbatim %}{% verbatim %}
+<!-- as variable -->
+<c-component :is="icon_name" />
+
+<!-- as an expression -->
+<c-component is="icon_{{ icon_name }}" />
+{% endcotton:verbatim %}{% endverbatim %}</c-snippet>
+
+    <c-hr id="context-isolation" />
+
+    <h2>9. Context Isolation</h2>
+
+    <p>You can pass the <c-highlight>only</c-highlight> attribute to the component, which will prevent it from adopting any context other than its direct attributes.</p>
+
+    <c-hr id="alpine-js-support" />
+
+    <h2>10. Alpine.js support</h2>
+
+    <p>The following key features allow you to build re-usable components with alpine.js:</p>
+
+    <c-ul>
+        <li>
+            <code>x-data</code> is accessible as <code>{% verbatim %}{{ x_data }}{% endverbatim %}</code> inside the component as cotton makes available snake_case versions of all kebab-cased attributes. (If you use <code>{% verbatim %}{{ attrs }}{% endverbatim %}</code> then the output will already be in the correct case).
+        </li>
+        <li><a href="https://alpinejs.dev/directives/bind" target="_blank">Shorthand x-bind</a> support (<code>:example</code>). Because single <code>:</code> attribute prefixing is reserved for cotton's <a href="{% url 'components' %}#dynamic-attributes">dynamic attributes</a>,
+            we can escape the first colon using <code>::</code>. This will ensure the attribute maintains a single <code>:</code> inside <code>{% verbatim %}{{ attrs }}{% endverbatim %}</code>
+        </li>
+    </c-ul>
+
+    <c-hr id="summary" />
+
+    <h2>Summary of Concepts</h2>
+    <ul>
+        <li><code>{% verbatim %}{{ slot }}{% endverbatim %}</code> - Default content injection.</li>
+        <li><c-highlight>Attributes</c-highlight> - Simple, straightforward customization.</li>
+        <li><c-highlight>Named Slots</c-highlight> - Provide HTML or template partial as a variable in the component.</li>
+        <li><c-highlight><code>:</code> Dynamic Attributes</c-highlight> - Pass variables and other data types other than strings.</li>
+        <li><code>{% verbatim %}{{ attrs }}{% endverbatim %}</code> - Prints attributes as HTML attributes.</li>
+        <li><code>{{ '<c-vars />'|force_escape }}</code> - Set default values and other component state.</li>
+        <li><c-highlight>Boolean attributes</c-highlight> - Attributes without values are passed down as <code>True</code></li>
+        <li><c-highlight>Dynamic Components</c-highlight> - Insert a component where the name is generated by a variable or template expression: <code>{{ '<c-component :is="my_variable" />'|force_escape }}</code>
+        </li>
+    </ul>
+
+
+    <c-navigation>
+        <c-slot name="prev">
+            <a href="{% url 'quickstart' %}">Quickstart</a>
+        </c-slot>
+        <c-slot name="next">
+            <a href="{% url 'usage-patterns' %}">Usage Patterns</a>
+        </c-slot>
+    </c-navigation>
+
+</c-layouts.with-sidebar>
