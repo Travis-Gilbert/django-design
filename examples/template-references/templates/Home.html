@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <h1>htmx test</h1>
+
+  <button
+      hx-get="/htmx-test/"
+      hx-target="#result"
+      hx-swap="innerHTML">
+    Click Me
+  </button>
+
+  <div id="result">
+    Waiting for htmx…
+  </div>
+{% endblock %}
