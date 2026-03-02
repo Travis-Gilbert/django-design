@@ -1,9 +1,9 @@
 {
   "name": "django-design",
-  "version": "3.0.0",
-  "description": "Full-stack Django development toolkit. Skills for backend architecture (models, views, APIs, auth, deployment) and frontend integration (HTMX, Alpine.js, Tailwind CSS, D3, django-cotton components, design systems). Commands for scaffolding projects, apps, APIs, and components. Agents for architecture review, API design review, frontend integration review, migration safety, and performance profiling.",
+  "version": "4.0.0",
+  "description": "Django expertise plugin with 22 specialist agents, framework source code references, and curated example patterns. Covers ORM, DRF, admin, templates (HTMX/Cotton/Alpine), Celery, auth, testing, deployment, performance, security, data visualization, CMS, and migrations.",
   "author": {
     "name": "Travis Gilbert"
   },
-  "keywords": ["django", "python", "web", "architecture", "scaffold", "code-review", "performance", "migrations", "cms", "htmx", "alpine", "tailwind", "d3", "cotton", "drf", "api", "design-system", "frontend"]
+  "keywords": ["django", "python", "web", "architecture", "scaffold", "code-review", "performance", "migrations", "cms", "htmx", "alpine", "tailwind", "d3", "cotton", "drf", "api", "design-system", "frontend", "celery", "orm", "testing", "security", "deployment"]
 }
