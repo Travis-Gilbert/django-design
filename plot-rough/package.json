@@ -1,0 +1,14 @@
+{
+  "name": "@observablehq/plot-rough",
+  "main": "5bd0e19b88776148@40.js",
+  "version": "40.0.0",
+  "homepage": "https://observablehq.com/@observablehq/plot-rough",
+  "author": {
+    "name": "Observable",
+    "url": "https://observablehq.com/@observablehq"
+  },
+  "type": "module",
+  "peerDependencies": {
+    "@observablehq/runtime": "4 - 5"
+  }
+}
